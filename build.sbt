@@ -148,9 +148,30 @@ def textusPublishCoursierChannelFile(
   target
 }
 
+def launcherBuildInfoSource(target: File, packageName: String, launcherName: String, launcherVersion: String): File = {
+  val file = target / "LauncherBuildInfo.scala"
+  IO.write(file,
+    s"""package $packageName
+       |
+       |object LauncherBuildInfo {
+       |  val name: String = "$launcherName"
+       |  val version: String = "$launcherVersion"
+       |}
+       |""".stripMargin)
+  file
+}
+
 lazy val root = (project in file("."))
   .settings(
     name := "textus",
+    Compile / sourceGenerators += Def.task {
+      Seq(launcherBuildInfoSource(
+        (Compile / sourceManaged).value / "launcher-build-info",
+        "textus.launcher",
+        name.value,
+        version.value
+      ))
+    }.taskValue,
     Compile / mainClass := Some("textus.launcher.TextusMain"),
     Test / test := {
       (Test / runMain).toTask(" textus.launcher.TextusLauncherSpec").value

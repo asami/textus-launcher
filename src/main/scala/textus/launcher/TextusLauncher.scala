@@ -4,7 +4,7 @@ import java.nio.file.Files
 
 /*
  * @since   May. 17, 2026
- * @version May. 17, 2026
+ * @version May. 18, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
@@ -16,6 +16,9 @@ final class TextusLauncher(
     val config = LauncherConfig.load(paths)
     val command = TextusCommandParser.parse(args)
     command match {
+      case TextusCommand.Version =>
+        println(s"${LauncherBuildInfo.name} ${LauncherBuildInfo.version}")
+        0
       case TextusCommand.Help =>
         println(TextusCommandParser.helpText)
         0

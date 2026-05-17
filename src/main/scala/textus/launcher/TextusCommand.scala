@@ -2,7 +2,7 @@ package textus.launcher
 
 /*
  * @since   May. 17, 2026
- * @version May. 17, 2026
+ * @version May. 18, 2026
  * @author  ASAMI, Tomoharu
  */
 enum ArtifactKind {
@@ -47,12 +47,15 @@ object TextusCommand {
     case Auto, Global, Project
   }
 
+  case object Version extends TextusCommand
   case object Help extends TextusCommand
 }
 
 object TextusCommandParser {
   def parse(args: Vector[String]): TextusCommand = {
-    if (args.isEmpty || args.contains("--help") || args.contains("-h")) {
+    if (args == Vector("--version") || args == Vector("version") || args == Vector("launcher", "version")) {
+      TextusCommand.Version
+    } else if (args.isEmpty || args.contains("--help") || args.contains("-h")) {
       TextusCommand.Help
     } else {
       val (runtimeversion, rest) = _take_global_runtime(args)
@@ -159,6 +162,9 @@ object TextusCommandParser {
 
   val helpText: String =
     """Usage:
+      |  textus --version
+      |  textus version
+      |  textus launcher version
       |  textus server  <artifact>[@<version>] [options...]
       |  textus client  <artifact>[@<version>] [args...]
       |  textus command <artifact>[@<version>] <operation> [params...]
