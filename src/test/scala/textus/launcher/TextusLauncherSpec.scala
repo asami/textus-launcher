@@ -4,7 +4,7 @@ import java.nio.file.{Files, Path}
 
 /*
  * @since   May. 17, 2026
- * @version May. 20, 2026
+ * @version May. 21, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -19,6 +19,15 @@ object TextusLauncherSpec {
     spec.runtimeCatalogParseAndSelectorResolution()
     spec.runtimeCatalogCommands()
     spec.executionRewritesToCncfArgs()
+    spec.artifactCatalogUsesCurrentCompatibleRuntimeByDefault()
+    spec.artifactCatalogCanSelectLatestTestedRuntime()
+    spec.artifactCatalogCanSelectLatestCompatibleRuntime()
+    spec.artifactCatalogCanSelectNewestCompatibleRuntime()
+    spec.artifactCatalogIncludesDependencyRequirements()
+    spec.artifactCatalogDoesNotFallbackToMetadataWhenCatalogRejectsVersion()
+    spec.runtimeConflictDefaultsToError()
+    spec.runtimeConflictCanUseNewestPolicy()
+    spec.explicitRuntimeIsValidatedAgainstArtifactRequirement()
     spec.runtimeCommandDoesNotLoadCncf()
     spec.latestRuntimeIsConcrete()
     spec.noRuntimeLibraryDependencies()
@@ -45,6 +54,17 @@ final class TextusLauncherSpec {
       .asInstanceOf[TextusCommand.Execute]
     _assert_equals(forcedversion.artifact.kind, ArtifactKind.Car)
     _assert_equals(forcedversion.artifact.version, Some("0.1.0"))
+    _assert_equals(forcedversion.runtimeSelectionPolicy, None)
+
+    val selection = TextusCommandParser.parse(Vector("--runtime-selection=tested-latest", "server", "textus-blog:0.1.0"))
+      .asInstanceOf[TextusCommand.Execute]
+    _assert_equals(selection.runtimeSelectionPolicy, Some(RuntimeSelectionPolicy.TestedLatest))
+    val newestselection = TextusCommandParser.parse(Vector("--runtime-selection=newest", "server", "textus-blog:0.1.0"))
+      .asInstanceOf[TextusCommand.Execute]
+    _assert_equals(newestselection.runtimeSelectionPolicy, Some(RuntimeSelectionPolicy.NewestCompatible))
+    val latestselection = TextusCommandParser.parse(Vector("--runtime-selection=latest", "server", "textus-blog:0.1.0"))
+      .asInstanceOf[TextusCommand.Execute]
+    _assert_equals(latestselection.runtimeSelectionPolicy, Some(RuntimeSelectionPolicy.LatestCompatible))
 
     val extversion = TextusCommandParser.parse(Vector("server", "textus-blog.car:0.1.0"))
       .asInstanceOf[TextusCommand.Execute]
@@ -234,6 +254,230 @@ final class TextusLauncherSpec {
     ))
   }
 
+  def artifactCatalogUsesCurrentCompatibleRuntimeByDefault(): Unit = _with_temp_paths { paths =>
+    val carrepo = paths.cwd.resolve("repository").resolve("car")
+    _write(carrepo.resolve("textus-blog").resolve("0.1.1").resolve("textus-blog-0.1.1.car"), "")
+    _write(paths.cwd.resolve("repository").resolve("catalog").resolve("car").resolve("textus-blog.yaml"),
+      _artifact_catalog_text("0.1.1", "0.2.0", Vector("0.2.0", "0.3.0-SNAPSHOT")))
+    _write(paths.cwd.resolve("runtime-catalog.yaml"), _catalog_text)
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
+      s"""runtime:
+         |  catalog:
+         |    url: ${paths.cwd.resolve("runtime-catalog.yaml")}
+         |repositories:
+         |  car:
+         |    - ${carrepo}
+         |""".stripMargin)
+    val resolver = FakeResolver()
+    val launcher = new TextusLauncher(paths, resolver, FakeInvoker())
+
+    launcher.run(Vector("command", "--car", "textus-blog", "blog.post.search"))
+
+    _assert_equals(resolver.resolvedClasspaths, Vector("0.2.0"))
+  }
+
+  def artifactCatalogCanSelectLatestTestedRuntime(): Unit = _with_temp_paths { paths =>
+    val carrepo = paths.cwd.resolve("repository").resolve("car")
+    _write(carrepo.resolve("textus-blog").resolve("0.1.1").resolve("textus-blog-0.1.1.car"), "")
+    _write(paths.cwd.resolve("repository").resolve("catalog").resolve("car").resolve("textus-blog.yaml"),
+      _artifact_catalog_text("0.1.1", "0.2.0", Vector("0.2.0", "0.3.0-SNAPSHOT")))
+    _write(paths.cwd.resolve("runtime-catalog.yaml"), _catalog_text)
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
+      s"""runtime:
+         |  catalog:
+         |    url: ${paths.cwd.resolve("runtime-catalog.yaml")}
+         |repositories:
+         |  car:
+         |    - ${carrepo}
+         |""".stripMargin)
+    val resolver = FakeResolver()
+    val launcher = new TextusLauncher(paths, resolver, FakeInvoker())
+
+    launcher.run(Vector("--runtime-selection=tested-latest", "command", "--car", "textus-blog", "blog.post.search"))
+
+    _assert_equals(resolver.resolvedClasspaths, Vector("0.2.0"))
+  }
+
+  def artifactCatalogCanSelectLatestCompatibleRuntime(): Unit = _with_temp_paths { paths =>
+    val carrepo = paths.cwd.resolve("repository").resolve("car")
+    _write(carrepo.resolve("textus-blog").resolve("0.1.1").resolve("textus-blog-0.1.1.car"), "")
+    _write(paths.cwd.resolve("repository").resolve("catalog").resolve("car").resolve("textus-blog.yaml"),
+      _artifact_catalog_text("0.1.1", "0.2.0", Vector("0.2.0")))
+    _write(paths.cwd.resolve("runtime-catalog.yaml"), _catalog_text)
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
+      s"""runtime:
+         |  catalog:
+         |    url: ${paths.cwd.resolve("runtime-catalog.yaml")}
+         |repositories:
+         |  car:
+         |    - ${carrepo}
+         |""".stripMargin)
+    val resolver = FakeResolver()
+    val launcher = new TextusLauncher(paths, resolver, FakeInvoker())
+
+    launcher.run(Vector("--runtime-selection=latest", "command", "--car", "textus-blog", "blog.post.search"))
+
+    _assert_equals(resolver.resolvedClasspaths, Vector("0.2.0"))
+  }
+
+  def artifactCatalogCanSelectNewestCompatibleRuntime(): Unit = _with_temp_paths { paths =>
+    val carrepo = paths.cwd.resolve("repository").resolve("car")
+    _write(carrepo.resolve("textus-blog").resolve("0.1.1").resolve("textus-blog-0.1.1.car"), "")
+    _write(paths.cwd.resolve("repository").resolve("catalog").resolve("car").resolve("textus-blog.yaml"),
+      _artifact_catalog_text("0.1.1", "0.2.0", Vector("0.2.0")))
+    _write(paths.cwd.resolve("runtime-catalog.yaml"), _catalog_text)
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
+      s"""runtime:
+         |  catalog:
+         |    url: ${paths.cwd.resolve("runtime-catalog.yaml")}
+         |repositories:
+         |  car:
+         |    - ${carrepo}
+         |""".stripMargin)
+    val resolver = FakeResolver()
+    val launcher = new TextusLauncher(paths, resolver, FakeInvoker())
+
+    launcher.run(Vector("--runtime-selection=newest", "command", "--car", "textus-blog", "blog.post.search"))
+
+    _assert_equals(resolver.resolvedClasspaths, Vector("0.3.0-SNAPSHOT"))
+  }
+
+  def artifactCatalogIncludesDependencyRequirements(): Unit = _with_temp_paths { paths =>
+    val carrepo = paths.cwd.resolve("repository").resolve("car")
+    _write(carrepo.resolve("textus-blog").resolve("0.1.1").resolve("textus-blog-0.1.1.car"), "")
+    _write(carrepo.resolve("textus-user-account").resolve("0.2.0").resolve("textus-user-account-0.2.0.car"), "")
+    _write(paths.cwd.resolve("repository").resolve("catalog").resolve("car").resolve("textus-blog.yaml"),
+      _artifact_catalog_text("0.1.1", "0.2.0", Vector("0.2.0", "0.3.0-SNAPSHOT")).replace(
+        "aliases: []",
+        "aliases: []\ndependencies:\n  car:\n    - textus-user-account:0.2.0"
+      ))
+    _write(paths.cwd.resolve("repository").resolve("catalog").resolve("car").resolve("textus-user-account.yaml"),
+      _artifact_catalog_text("0.2.0", "0.2.0", Vector("0.2.0")))
+    _write(paths.cwd.resolve("runtime-catalog.yaml"), _catalog_text)
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
+      s"""runtime:
+         |  catalog:
+         |    url: ${paths.cwd.resolve("runtime-catalog.yaml")}
+         |repositories:
+         |  car:
+         |    - ${carrepo}
+         |""".stripMargin)
+    val resolver = FakeResolver()
+    val launcher = new TextusLauncher(paths, resolver, FakeInvoker())
+
+    launcher.run(Vector("command", "--car", "textus-blog", "blog.post.search"))
+
+    _assert_equals(resolver.resolvedClasspaths, Vector("0.2.0"))
+  }
+
+  def artifactCatalogDoesNotFallbackToMetadataWhenCatalogRejectsVersion(): Unit = _with_temp_paths { paths =>
+    val carrepo = paths.cwd.resolve("repository").resolve("car")
+    _write(carrepo.resolve("textus-blog").resolve("0.1.1").resolve("textus-blog-0.1.1.car"), "")
+    _write(carrepo.resolve("textus-blog").resolve("maven-metadata.xml"),
+      """<?xml version="1.0" encoding="UTF-8"?>
+        |<metadata>
+        |  <artifactId>textus-blog</artifactId>
+        |  <versioning>
+        |    <latest>0.1.1</latest>
+        |    <versions><version>0.1.1</version></versions>
+        |  </versioning>
+        |</metadata>
+        |""".stripMargin)
+    _write(paths.cwd.resolve("repository").resolve("catalog").resolve("car").resolve("textus-blog.yaml"),
+      _artifact_catalog_text("0.1.1", "0.2.0", Vector("0.2.0")).replace("status: active", "status: disabled"))
+    _write(paths.cwd.resolve("runtime-catalog.yaml"), _catalog_text)
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
+      s"""runtime:
+         |  catalog:
+         |    url: ${paths.cwd.resolve("runtime-catalog.yaml")}
+         |repositories:
+         |  car:
+         |    - ${carrepo}
+         |""".stripMargin)
+    val launcher = new TextusLauncher(paths, FakeResolver(), FakeInvoker())
+    val failed =
+      try {
+        launcher.run(Vector("command", "--car", "textus-blog", "blog.post.search"))
+        false
+      } catch {
+        case e: TextusException => e.getMessage.contains("artifact catalog does not contain an enabled version")
+      }
+    assert(failed)
+  }
+
+
+  def runtimeConflictDefaultsToError(): Unit = _with_temp_paths { paths =>
+    val carrepo = paths.cwd.resolve("repository").resolve("car")
+    _write(carrepo.resolve("textus-blog").resolve("0.1.1").resolve("textus-blog-0.1.1.car"), "")
+    _write(paths.cwd.resolve("repository").resolve("catalog").resolve("car").resolve("textus-blog.yaml"),
+      _artifact_catalog_text("0.1.1", "9.0.0", Vector("9.0.0")))
+    _write(paths.cwd.resolve("runtime-catalog.yaml"), _catalog_text)
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
+      s"""runtime:
+         |  catalog:
+         |    url: ${paths.cwd.resolve("runtime-catalog.yaml")}
+         |repositories:
+         |  car:
+         |    - ${carrepo}
+         |""".stripMargin)
+    val launcher = new TextusLauncher(paths, FakeResolver(), FakeInvoker())
+    val failed =
+      try {
+        launcher.run(Vector("command", "--car", "textus-blog", "blog.post.search"))
+        false
+      } catch {
+        case e: TextusException => e.getMessage.contains("no compatible CNCF runtime version")
+      }
+    assert(failed)
+  }
+
+  def runtimeConflictCanUseNewestPolicy(): Unit = _with_temp_paths { paths =>
+    val carrepo = paths.cwd.resolve("repository").resolve("car")
+    _write(carrepo.resolve("textus-blog").resolve("0.1.1").resolve("textus-blog-0.1.1.car"), "")
+    _write(paths.cwd.resolve("repository").resolve("catalog").resolve("car").resolve("textus-blog.yaml"),
+      _artifact_catalog_text("0.1.1", "9.0.0", Vector("9.0.0")))
+    _write(paths.cwd.resolve("runtime-catalog.yaml"), _catalog_text)
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
+      s"""runtime:
+         |  catalog:
+         |    url: ${paths.cwd.resolve("runtime-catalog.yaml")}
+         |repositories:
+         |  car:
+         |    - ${carrepo}
+         |""".stripMargin)
+    val resolver = FakeResolver()
+    val launcher = new TextusLauncher(paths, resolver, FakeInvoker())
+
+    launcher.run(Vector("--runtime-no-compatible=newest", "command", "--car", "textus-blog", "blog.post.search"))
+
+    _assert_equals(resolver.resolvedClasspaths, Vector("0.3.0-SNAPSHOT"))
+  }
+
+  def explicitRuntimeIsValidatedAgainstArtifactRequirement(): Unit = _with_temp_paths { paths =>
+    val carrepo = paths.cwd.resolve("repository").resolve("car")
+    _write(carrepo.resolve("textus-blog").resolve("0.1.1").resolve("textus-blog-0.1.1.car"), "")
+    _write(paths.cwd.resolve("repository").resolve("catalog").resolve("car").resolve("textus-blog.yaml"),
+      _artifact_catalog_text("0.1.1", "0.2.0", Vector("0.2.0")))
+    _write(paths.cwd.resolve("runtime-catalog.yaml"), _catalog_text)
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
+      s"""runtime:
+         |  catalog:
+         |    url: ${paths.cwd.resolve("runtime-catalog.yaml")}
+         |repositories:
+         |  car:
+         |    - ${carrepo}
+         |""".stripMargin)
+    val launcher = new TextusLauncher(paths, FakeResolver(), FakeInvoker())
+    val failed =
+      try {
+        launcher.run(Vector("--runtime", "0.1.0", "command", "--car", "textus-blog", "blog.post.search"))
+        false
+      } catch {
+        case e: TextusException => e.getMessage.contains("not compatible") || e.getMessage.contains("disabled")
+      }
+    assert(failed)
+  }
+
   def runtimeCommandDoesNotLoadCncf(): Unit = _with_temp_paths { paths =>
     _write(paths.cwd.resolve(".textus").resolve("config.yaml"), "runtime:\n  version: 0.5.0\n")
     val resolver = FakeResolver()
@@ -315,6 +559,30 @@ final class TextusLauncherSpec {
       |    module: org.goldenport:goldenport-cncf_3:0.3.0-SNAPSHOT
       |    publishedAt: 2026-05-17T02:00:00Z
       |""".stripMargin
+
+  private def _artifact_catalog_text(
+    version: String,
+    minimum: String,
+    tested: Vector[String]
+  ): String =
+    s"""schemaVersion: 1
+       |kind: car
+       |artifactId: textus-blog
+       |recommended: $version
+       |latestStable: $version
+       |aliases: []
+       |versions:
+       |  - version: $version
+       |    channel: stable
+       |    status: active
+       |    file: repository/car/textus-blog/$version/textus-blog-$version.car
+       |    runtime:
+       |      cncf:
+       |        minimum: $minimum
+       |        excluded: []
+       |        tested:
+       |${tested.map(v => s"          - $v").mkString("\n")}
+       |""".stripMargin
 }
 
 final class FakeResolver extends CncfRuntimeResolver {

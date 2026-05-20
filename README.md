@@ -83,6 +83,28 @@ has `.textus/`; otherwise it writes the global launcher version. Use `--project`
 or `--global` to force the target. A fresh install with no version file uses
 `recommended` from the runtime catalog.
 
+Runtime selector terms are:
+
+- `recommended`: operator-selected default runtime from the catalog.
+- `latest`: alias of `latest-stable`; the newest stable runtime in the catalog.
+- `latest-stable`: newest stable runtime in the catalog.
+- `latest-snapshot`: newest snapshot runtime in the catalog.
+- `newest`: newest enabled runtime across all catalog channels.
+
+When a component catalog declares `runtime.cncf` compatibility, `textus` uses
+`current-compatible` selection by default: the current runtime selector
+normally resolves to `recommended`, and it is used when it satisfies all
+component requirements. Use `--runtime-selection=tested-latest`,
+`--runtime-selection=latest`, or `--runtime-selection=newest` to choose a
+different compatible-runtime policy.
+
+The runtime selector and compatibility-selection semantics are intentionally
+duplicated in the `textus` and `cncf` launchers instead of being factored into a
+shared launcher-core library. These launchers are small, separately distributed
+entrypoints and are expected to stabilize. When changing `recommended`,
+`latest`, `newest`, or `runtime.cncf` compatibility behavior, update both
+launchers and their tests together.
+
 ## Artifact Version Syntax
 
 Use `artifact:version` when selecting an explicit CAR/SAR version:

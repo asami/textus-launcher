@@ -5,12 +5,14 @@ import java.nio.file.{Files, Path}
 
 /*
  * @since   May. 17, 2026
- * @version May. 17, 2026
+ * @version May. 21, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class LauncherConfig(
   runtimeVersion: Option[String] = None,
   runtimeCatalogUrl: Option[String] = None,
+  runtimeSelectionPolicy: Option[RuntimeSelectionPolicy] = None,
+  runtimeNoCompatiblePolicy: Option[RuntimeNoCompatiblePolicy] = None,
   carRepositories: Vector[String] = Vector.empty,
   sarRepositories: Vector[String] = Vector.empty,
   mavenRepositories: Vector[String] = Vector.empty,
@@ -20,6 +22,8 @@ final case class LauncherConfig(
     LauncherConfig(
       runtimeVersion = higher.runtimeVersion.orElse(runtimeVersion),
       runtimeCatalogUrl = higher.runtimeCatalogUrl.orElse(runtimeCatalogUrl),
+      runtimeSelectionPolicy = higher.runtimeSelectionPolicy.orElse(runtimeSelectionPolicy),
+      runtimeNoCompatiblePolicy = higher.runtimeNoCompatiblePolicy.orElse(runtimeNoCompatiblePolicy),
       carRepositories = _merge_list(carRepositories, higher.carRepositories),
       sarRepositories = _merge_list(sarRepositories, higher.sarRepositories),
       mavenRepositories = _merge_list(mavenRepositories, higher.mavenRepositories),
@@ -31,6 +35,8 @@ final case class LauncherConfig(
       carRepositories = _append_defaults(carRepositories, LauncherConfig.DEFAULT_CAR_REPOSITORIES),
       sarRepositories = _append_defaults(sarRepositories, LauncherConfig.DEFAULT_SAR_REPOSITORIES),
       mavenRepositories = _append_defaults(mavenRepositories, LauncherConfig.DEFAULT_MAVEN_REPOSITORIES),
+      runtimeSelectionPolicy = runtimeSelectionPolicy.orElse(Some(RuntimeSelectionPolicy.CurrentCompatible)),
+      runtimeNoCompatiblePolicy = runtimeNoCompatiblePolicy.orElse(Some(RuntimeNoCompatiblePolicy.Error)),
       runtimeCatalogUrl = runtimeCatalogUrl.orElse(Some(LauncherConfig.DEFAULT_RUNTIME_CATALOG_URL))
     )
 
@@ -97,6 +103,10 @@ object LauncherConfig {
     LauncherConfig(
       runtimeVersion = _first_("runtime.version", "textus.runtime.version", "version"),
       runtimeCatalogUrl = _first_("runtime.catalog.url", "textus.runtime.catalog.url", "catalog.url"),
+      runtimeSelectionPolicy = _first_("runtime.cncf.selectionPolicy", "textus.runtime.cncf.selectionPolicy").
+        map(RuntimeSelectionPolicy.parse),
+      runtimeNoCompatiblePolicy = _first_("runtime.cncf.noCompatiblePolicy", "textus.runtime.cncf.noCompatiblePolicy").
+        map(RuntimeNoCompatiblePolicy.parse),
       carRepositories = _all_("repositories.car", "componentRepositories.car", "textus.repository.car", "textus.component.repository.car"),
       sarRepositories = _all_("repositories.sar", "componentRepositories.sar", "textus.repository.sar", "textus.subsystem.repository.sar"),
       mavenRepositories = _all_("repositories.maven", "textus.repository.maven"),
@@ -108,12 +118,16 @@ object LauncherConfig {
     val c = config.normalizedWithDefaults
     val runtime = c.runtimeVersion.getOrElse("(not configured)")
     val catalog = c.runtimeCatalogUrl.getOrElse("(not configured)")
+    val selection = c.runtimeSelectionPolicy.map(RuntimeSelectionPolicy.render).getOrElse("current-compatible")
+    val nocompatible = c.runtimeNoCompatiblePolicy.map(RuntimeNoCompatiblePolicy.render).getOrElse("error")
     val cars = c.carRepositories.mkString(", ")
     val sars = c.sarRepositories.mkString(", ")
     val mavens = c.mavenRepositories.mkString(", ")
     val coursiers = c.coursierRepositories.mkString(", ")
     s"""runtime.version: $runtime
        |runtime.catalog.url: $catalog
+       |runtime.cncf.selectionPolicy: $selection
+       |runtime.cncf.noCompatiblePolicy: $nocompatible
        |repositories.car: $cars
        |repositories.sar: $sars
        |repositories.maven: $mavens

@@ -4,7 +4,7 @@ import java.nio.file.Files
 
 /*
  * @since   May. 17, 2026
- * @version May. 18, 2026
+ * @version May. 21, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
@@ -119,8 +119,19 @@ final class TextusLauncher(
     val store = RuntimeVersionStore(paths)
     val catalog = RuntimeCatalogStore(paths).loadOrRefresh(config)
     val effectiveconfig = catalog.map(config.withCatalog).getOrElse(config)
-    val runtimeversion = store.current(command.runtimeVersion, config)
     val resolved = ArtifactResolver().resolve(command.artifact, effectiveconfig)
+    val selectionpolicy = command.runtimeSelectionPolicy.
+      orElse(effectiveconfig.runtimeSelectionPolicy).
+      getOrElse(RuntimeSelectionPolicy.CurrentCompatible)
+    val policy = command.runtimeNoCompatiblePolicy.orElse(effectiveconfig.runtimeNoCompatiblePolicy).getOrElse(RuntimeNoCompatiblePolicy.Error)
+    val runtimeversion = RuntimeVersionSelection.select(
+      requested = command.runtimeVersion,
+      stored = store.current(None, config),
+      requirements = resolved.runtimeRequirements,
+      catalog = catalog,
+      selectionPolicy = selectionpolicy,
+      policy = policy
+    )
     val cncfargs = _cncf_args(command, resolved, effectiveconfig)
     val classpath = runtimeresolver.resolve(runtimeversion, effectiveconfig, paths)
     cncfinvoker.invoke(classpath, cncfargs)

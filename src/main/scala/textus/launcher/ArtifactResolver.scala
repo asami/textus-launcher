@@ -6,37 +6,38 @@ import scala.util.Using
 
 /*
  * @since   May. 17, 2026
- * @version May. 20, 2026
+ * @version May. 21, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class ResolvedArtifact(
   selector: ArtifactSelector,
-  kind: ArtifactKind
+  kind: ArtifactKind,
+  runtimeRequirements: Vector[RuntimeRequirement] = Vector.empty
 )
 
 final class ArtifactResolver {
   def resolve(selector: ArtifactSelector, config: LauncherConfig): ResolvedArtifact =
     selector.kind match {
       case ArtifactKind.Car =>
-        _resolve_version(selector, config.carRepositories, ".car") match {
-          case Some(version) => ResolvedArtifact(selector.copy(kind = ArtifactKind.Car, version = Some(version)), ArtifactKind.Car)
+        _resolve_artifact(selector, config.carRepositories, ".car") match {
+          case Some(resolved) => resolved.copy(selector = resolved.selector.copy(kind = ArtifactKind.Car), kind = ArtifactKind.Car)
           case None =>
             throw TextusException(s"CAR artifact not found in repositories: ${selector.display}")
         }
       case ArtifactKind.Sar =>
-        _resolve_version(selector, config.sarRepositories, ".sar") match {
-          case Some(version) => ResolvedArtifact(selector.copy(kind = ArtifactKind.Sar, version = Some(version)), ArtifactKind.Sar)
+        _resolve_artifact(selector, config.sarRepositories, ".sar") match {
+          case Some(resolved) => resolved.copy(selector = resolved.selector.copy(kind = ArtifactKind.Sar), kind = ArtifactKind.Sar)
           case None =>
             throw TextusException(s"SAR artifact not found in repositories: ${selector.display}")
         }
       case ArtifactKind.Auto =>
-        val carversion = _resolve_version(selector, config.carRepositories, ".car")
-        val sarversion = _resolve_version(selector, config.sarRepositories, ".sar")
-        (carversion, sarversion) match {
-          case (Some(version), None) =>
-            ResolvedArtifact(selector.copy(kind = ArtifactKind.Car, version = Some(version)), ArtifactKind.Car)
-          case (None, Some(version)) =>
-            ResolvedArtifact(selector.copy(kind = ArtifactKind.Sar, version = Some(version)), ArtifactKind.Sar)
+        val carartifact = _resolve_artifact(selector, config.carRepositories, ".car")
+        val sarartifact = _resolve_artifact(selector, config.sarRepositories, ".sar")
+        (carartifact, sarartifact) match {
+          case (Some(resolved), None) =>
+            resolved.copy(selector = resolved.selector.copy(kind = ArtifactKind.Car), kind = ArtifactKind.Car)
+          case (None, Some(resolved)) =>
+            resolved.copy(selector = resolved.selector.copy(kind = ArtifactKind.Sar), kind = ArtifactKind.Sar)
           case (Some(_), Some(_)) =>
             throw TextusException(s"artifact is ambiguous between CAR and SAR: ${selector.display}; use --car or --sar")
           case (None, None) =>
@@ -44,47 +45,106 @@ final class ArtifactResolver {
         }
     }
 
-  private def _resolve_version(
+  private def _resolve_artifact(
     selector: ArtifactSelector,
     repositories: Vector[String],
     suffix: String
-  ): Option[String] =
-    repositories.view.flatMap(repo => _resolve_version_in_repository(selector, repo, suffix)).headOption
+  ): Option[ResolvedArtifact] =
+    repositories.view.flatMap(repo => _resolve_artifact_in_repository(selector, repo, suffix)).headOption
 
-  private def _resolve_version_in_repository(
+  private def _resolve_artifact_in_repository(
     selector: ArtifactSelector,
     repository: String,
     suffix: String
-  ): Option[String] =
+  ): Option[ResolvedArtifact] =
     if (_is_url(repository))
-      _remote_resolve_version(selector, repository, suffix)
+      _remote_resolve_artifact(selector, repository, suffix)
     else
-      _local_resolve_version(selector, Paths.get(repository), suffix)
+      _local_resolve_artifact(selector, Paths.get(repository), suffix)
 
-  private def _local_resolve_version(
+  private def _local_resolve_artifact(
     selector: ArtifactSelector,
     repository: Path,
     suffix: String
-  ): Option[String] = {
+  ): Option[ResolvedArtifact] =
+    _local_catalog_path(repository, selector.name, suffix) match {
+      case Some(path) =>
+        Some(_local_catalog_artifact(selector, repository, suffix, path))
+      case None =>
+        _local_metadata_artifact(selector, repository, suffix)
+    }
+
+  private def _local_metadata_artifact(
+    selector: ArtifactSelector,
+    repository: Path,
+    suffix: String
+  ): Option[ResolvedArtifact] = {
     val root = repository.resolve(selector.name)
     if (!Files.isDirectory(root)) {
       None
     } else {
       val versions = selector.version.map(Vector(_)).getOrElse(_local_versions(root))
-      versions.find(v => Files.isRegularFile(root.resolve(v).resolve(s"${selector.name}-$v$suffix")))
+      versions.find(v => Files.isRegularFile(root.resolve(v).resolve(s"${selector.name}-$v$suffix"))).
+        map(v => ResolvedArtifact(selector.copy(version = Some(v)), _kind_from_suffix(suffix)))
     }
   }
 
-  private def _remote_resolve_version(
+  private def _remote_resolve_artifact(
     selector: ArtifactSelector,
     repository: String,
     suffix: String
-  ): Option[String] = {
+  ): Option[ResolvedArtifact] = {
+    val catalogurl = _catalog_url(repository, selector.name, suffix)
+    if (_head(catalogurl))
+      Some(_remote_catalog_artifact(selector, repository, suffix, catalogurl))
+    else
+      _remote_metadata_artifact(selector, repository, suffix)
+  }
+
+  private def _remote_metadata_artifact(
+    selector: ArtifactSelector,
+    repository: String,
+    suffix: String
+  ): Option[ResolvedArtifact] = {
     val versions = selector.version.map(Vector(_)).getOrElse(_remote_versions(repository, selector.name))
     versions.find { v =>
       val url = _join(repository, selector.name, v, s"${selector.name}-$v$suffix")
       _head(url)
+    }.map(v => ResolvedArtifact(selector.copy(version = Some(v)), _kind_from_suffix(suffix)))
+  }
+
+  private def _local_catalog_artifact(
+    selector: ArtifactSelector,
+    repository: Path,
+    suffix: String,
+    path: Path
+  ): ResolvedArtifact = {
+    val catalog = RepositoryArtifactCatalog.parse(Files.readString(path))
+    val version = catalog.resolve(selector.version).getOrElse {
+      throw TextusException(s"artifact catalog does not contain an enabled version for ${selector.display}: $path")
     }
+    _local_catalog_file_exists(repository, selector.name, suffix, version).getOrElse {
+      throw TextusException(s"artifact catalog points to a missing archive: ${selector.name}:${version.version}")
+    }
+    val requirements = version.runtime.toVector.map(_.withSource(selector.name)) ++ _local_dependency_requirements(repository, catalog)
+    ResolvedArtifact(selector.copy(version = Some(version.version)), _kind_from_suffix(suffix), requirements)
+  }
+
+  private def _remote_catalog_artifact(
+    selector: ArtifactSelector,
+    repository: String,
+    suffix: String,
+    catalogurl: String
+  ): ResolvedArtifact = {
+    val catalog = RepositoryArtifactCatalog.parse(_remote_catalog_text_required(catalogurl))
+    val version = catalog.resolve(selector.version).getOrElse {
+      throw TextusException(s"artifact catalog does not contain an enabled version for ${selector.display}: $catalogurl")
+    }
+    _remote_catalog_file_exists(repository, selector.name, suffix, version).getOrElse {
+      throw TextusException(s"artifact catalog points to a missing archive: ${selector.name}:${version.version}")
+    }
+    val requirements = version.runtime.toVector.map(_.withSource(selector.name)) ++ _remote_dependency_requirements(repository, catalog)
+    ResolvedArtifact(selector.copy(version = Some(version.version)), _kind_from_suffix(suffix), requirements)
   }
 
   private def _local_versions(root: Path): Vector[String] =
@@ -144,6 +204,103 @@ final class ArtifactResolver {
   private def _is_url(value: String): Boolean =
     value.startsWith("http://") || value.startsWith("https://")
 
+  private def _kind_from_suffix(suffix: String): ArtifactKind =
+    if (suffix == ".sar") ArtifactKind.Sar else ArtifactKind.Car
+
+  private def _local_catalog_path(
+    repository: Path,
+    name: String,
+    suffix: String
+  ): Option[Path] = {
+    val kind = suffix.drop(1)
+    Option(repository.getParent).map(_.resolve("catalog").resolve(kind).resolve(s"$name.yaml")).filter(Files.isRegularFile(_))
+  }
+
+  private def _local_catalog_file_exists(
+    repository: Path,
+    name: String,
+    suffix: String,
+    version: RepositoryArtifactCatalogVersion
+  ): Option[Unit] = {
+    val default = repository.resolve(name).resolve(version.version).resolve(s"$name-${version.version}$suffix")
+    val path = version.file.map(f => repository.getParent.resolve(f.stripPrefix("repository/"))).getOrElse(default)
+    Option.when(Files.isRegularFile(path))(())
+  }
+
+  private def _remote_catalog_text(
+    repository: String,
+    name: String,
+    suffix: String
+  ): Option[String] = {
+    val url = _catalog_url(repository, name, suffix)
+    try {
+      val connection = URI.create(url).toURL.openConnection()
+      connection.setConnectTimeout(2000)
+      connection.setReadTimeout(5000)
+      Some(Using.resource(scala.io.Source.fromInputStream(connection.getInputStream, "UTF-8"))(_.mkString))
+    } catch {
+      case _: Throwable => None
+    }
+  }
+
+  private def _remote_catalog_text_required(url: String): String =
+    try {
+      val connection = URI.create(url).toURL.openConnection()
+      connection.setConnectTimeout(2000)
+      connection.setReadTimeout(5000)
+      Using.resource(scala.io.Source.fromInputStream(connection.getInputStream, "UTF-8"))(_.mkString)
+    } catch {
+      case e: Throwable => throw TextusException(s"failed to read artifact catalog: $url: ${e.getMessage}")
+    }
+
+  private def _remote_catalog_file_exists(
+    repository: String,
+    name: String,
+    suffix: String,
+    version: RepositoryArtifactCatalogVersion
+  ): Option[Unit] = {
+    val default = _join(repository, name, version.version, s"$name-${version.version}$suffix")
+    val url = version.file.map(f => _repository_root_url(repository) + "/" + f.stripPrefix("repository/")).getOrElse(default)
+    Option.when(_head(url))(())
+  }
+
+  private def _local_dependency_requirements(
+    repository: Path,
+    catalog: RepositoryArtifactCatalog
+  ): Vector[RuntimeRequirement] =
+    catalog.dependencies.flatMap { dependency =>
+      val suffix = dependency.suffix
+      _local_catalog_path(repository, dependency.selector.name, suffix).toVector.flatMap { path =>
+        val depcatalog = RepositoryArtifactCatalog.parse(Files.readString(path))
+        depcatalog.resolve(dependency.selector.version).toVector.flatMap(_.runtime.map(_.withSource(dependency.selector.name)))
+      }
+    }
+
+  private def _remote_dependency_requirements(
+    repository: String,
+    catalog: RepositoryArtifactCatalog
+  ): Vector[RuntimeRequirement] =
+    catalog.dependencies.flatMap { dependency =>
+      val suffix = dependency.suffix
+      _remote_catalog_text(repository, dependency.selector.name, suffix).toVector.flatMap { text =>
+        val depcatalog = RepositoryArtifactCatalog.parse(text)
+        depcatalog.resolve(dependency.selector.version).toVector.flatMap(_.runtime.map(_.withSource(dependency.selector.name)))
+      }
+    }
+
+  private def _catalog_url(
+    repository: String,
+    name: String,
+    suffix: String
+  ): String =
+    _join(_repository_root_url(repository), "catalog", suffix.drop(1), s"$name.yaml")
+
+  private def _repository_root_url(repository: String): String =
+    {
+      val clean = repository.reverse.dropWhile(_ == '/').reverse
+      clean.substring(0, clean.lastIndexOf('/'))
+    }
+
   private def _join(parts: String*): String =
     parts.toVector.zipWithIndex.map { case (p, idx) =>
       if (idx == 0) p.reverse.dropWhile(_ == '/').reverse
@@ -152,4 +309,156 @@ final class ArtifactResolver {
 
   private def _first_tag(text: String, tag: String): Option[String] =
     s"<$tag>([^<]+)</$tag>".r.findFirstMatchIn(text).map(_.group(1).trim).filter(_.nonEmpty)
+}
+
+final case class RepositoryArtifactCatalog(
+  recommended: Option[String],
+  latestStable: Option[String],
+  latestSnapshot: Option[String],
+  dependencies: Vector[RepositoryArtifactDependency],
+  versions: Vector[RepositoryArtifactCatalogVersion]
+) {
+  def resolve(selector: Option[String]): Option[RepositoryArtifactCatalogVersion] = {
+    val version = selector.orElse(recommended).orElse(latestStable).orElse(latestSnapshot)
+    version.flatMap(v => versions.find(x => x.version == v && x.status.forall(_ != "disabled"))).
+      orElse(versions.filter(_.status.forall(_ != "disabled")).sortWith((a, b) => RuntimeVersionOrdering.compare(a.version, b.version) < 0).lastOption)
+  }
+}
+
+final case class RepositoryArtifactCatalogVersion(
+  version: String,
+  status: Option[String],
+  file: Option[String],
+  runtime: Option[RuntimeRequirement]
+)
+
+final case class RepositoryArtifactDependency(
+  selector: ArtifactSelector,
+  kind: ArtifactKind
+) {
+  def suffix: String =
+    kind match {
+      case ArtifactKind.Sar => ".sar"
+      case _ => ".car"
+    }
+}
+
+object RepositoryArtifactCatalog {
+  def parse(text: String): RepositoryArtifactCatalog = {
+    val parsed = SimpleYaml.parse(text)
+    val versions = _version_maps(text).flatMap(_version)
+    RepositoryArtifactCatalog(
+      recommended = _first(parsed, "recommended"),
+      latestStable = _first(parsed, "latestStable"),
+      latestSnapshot = _first(parsed, "latestSnapshot"),
+      dependencies = _dependencies(parsed),
+      versions = versions
+    )
+  }
+
+  private def _version(values: Map[String, Vector[String]]): Option[RepositoryArtifactCatalogVersion] =
+    _first(values, "version").map { version =>
+      val runtime = RuntimeRequirement(
+        minimum = _first(values, "runtime.cncf.minimum"),
+        maximum = _first(values, "runtime.cncf.maximum"),
+        excluded = _list(values, "runtime.cncf.excluded"),
+        tested = _list(values, "runtime.cncf.tested")
+      )
+      RepositoryArtifactCatalogVersion(
+        version = version,
+        status = _first(values, "status"),
+        file = _first(values, "file"),
+        runtime = Option.when(!runtime.isEmpty)(runtime)
+      )
+    }
+
+  private def _version_maps(text: String): Vector[Map[String, Vector[String]]] = {
+    var versions = Vector.empty[Map[String, Vector[String]]]
+    var versionvalues = Map.empty[String, Vector[String]]
+    var versionstack = Vector.empty[(Int, String)]
+    var inversions = false
+
+    def _finish_version_(): Unit =
+      if (versionvalues.nonEmpty) {
+        versions :+= versionvalues
+        versionvalues = Map.empty
+      }
+
+    def _drop_stack_(stack: Vector[(Int, String)], indent: Int): Vector[(Int, String)] =
+      stack.dropRight(stack.reverse.takeWhile(_._1 >= indent).length)
+
+    def _path_(stack: Vector[(Int, String)], key: String): String =
+      (stack.map(_._2) :+ key).mkString(".")
+
+    def _append_(path: String, value: String): Unit =
+      if (path.nonEmpty)
+        versionvalues = versionvalues.updated(path, versionvalues.getOrElse(path, Vector.empty) :+ _unquote(value))
+
+    text.linesIterator.foreach { raw =>
+      val line = _strip_comment(raw)
+      if (line.trim.nonEmpty) {
+        val indent = line.takeWhile(_ == ' ').length
+        val trimmed = line.trim
+        if (indent == 0)
+          inversions = trimmed == "versions:"
+        if (inversions && indent == 2 && trimmed.startsWith("- ")) {
+          _finish_version_()
+          versionstack = Vector.empty
+          val rest = trimmed.drop(2).trim
+          if (rest.contains(":")) {
+            val (key, value) = _split_key_value(rest)
+            _append_(key, value)
+          }
+        } else if (inversions && indent > 2) {
+          if (trimmed.startsWith("- ")) {
+            versionstack = _drop_stack_(versionstack, indent)
+            _append_(versionstack.map(_._2).mkString("."), trimmed.drop(2).trim)
+          } else if (trimmed.contains(":")) {
+            val (key, value) = _split_key_value(trimmed)
+            versionstack = _drop_stack_(versionstack, indent)
+            if (value.isEmpty)
+              versionstack :+= indent -> key
+            else
+              _append_(_path_(versionstack, key), value)
+          }
+        }
+      }
+    }
+    _finish_version_()
+    versions
+  }
+
+  private def _first(values: Map[String, Vector[String]], key: String): Option[String] =
+    values.getOrElse(key, Vector.empty).headOption.map(_.trim).filter(_.nonEmpty)
+
+  private def _list(values: Map[String, Vector[String]], key: String): Vector[String] =
+    values.getOrElse(key, Vector.empty).flatMap { value =>
+      val clean = value.trim
+      if (clean.isEmpty || clean == "[]")
+        Vector.empty
+      else if (clean.startsWith("[") && clean.endsWith("]"))
+        clean.stripPrefix("[").stripSuffix("]").split(",").toVector.map(_unquote).map(_.trim).filter(_.nonEmpty)
+      else
+        Vector(_unquote(clean))
+    }
+
+  private def _strip_comment(value: String): String = {
+    val idx = value.indexOf('#')
+    if (idx >= 0) value.substring(0, idx) else value
+  }
+
+  private def _split_key_value(value: String): (String, String) = {
+    val idx = value.indexOf(':')
+    (value.substring(0, idx).trim, value.substring(idx + 1).trim)
+  }
+
+  private def _unquote(value: String): String =
+    value.stripPrefix("\"").stripSuffix("\"").stripPrefix("'").stripSuffix("'")
+
+  private def _dependencies(values: Map[String, Vector[String]]): Vector[RepositoryArtifactDependency] =
+    values.getOrElse("dependencies.car", Vector.empty).map { value =>
+      RepositoryArtifactDependency(TextusCommandParser.parseArtifact(value, ArtifactKind.Car), ArtifactKind.Car)
+    } ++ values.getOrElse("dependencies.sar", Vector.empty).map { value =>
+      RepositoryArtifactDependency(TextusCommandParser.parseArtifact(value, ArtifactKind.Sar), ArtifactKind.Sar)
+    }
 }

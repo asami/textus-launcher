@@ -7,7 +7,7 @@ import scala.util.Using
 
 /*
  * @since   May. 17, 2026
- * @version May. 17, 2026
+ * @version May. 21, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class RuntimeCatalog(
@@ -42,12 +42,14 @@ final case class RuntimeCatalog(
   }
 
   def newest: RuntimeCatalogVersion =
-    versions
-      .filterNot(_.status.contains("disabled"))
+    enabledVersions
       .sortBy(v => (v.publishedAt.getOrElse(""), v.version))
       .lastOption
       .getOrElse(throw TextusException("runtime catalog does not contain an enabled runtime version"))
       .validated
+
+  def enabledVersions: Vector[RuntimeCatalogVersion] =
+    versions.filterNot(_.status.contains("disabled"))
 
   def renderRemoteList: String =
     versions.map { v =>

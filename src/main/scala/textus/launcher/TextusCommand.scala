@@ -2,7 +2,7 @@ package textus.launcher
 
 /*
  * @since   May. 17, 2026
- * @version May. 20, 2026
+ * @version May. 21, 2026
  * @author  ASAMI, Tomoharu
  */
 enum ArtifactKind {
@@ -26,6 +26,8 @@ object TextusCommand {
     artifact: ArtifactSelector,
     args: Vector[String],
     runtimeVersion: Option[String],
+    runtimeSelectionPolicy: Option[RuntimeSelectionPolicy],
+    runtimeNoCompatiblePolicy: Option[RuntimeNoCompatiblePolicy],
     passthrough: Vector[String]
   ) extends TextusCommand
 
@@ -58,10 +60,10 @@ object TextusCommandParser {
     } else if (args.isEmpty || args.contains("--help") || args.contains("-h")) {
       TextusCommand.Help
     } else {
-      val (runtimeversion, rest) = _take_global_runtime(args)
+      val (runtimeversion, selectionpolicy, nocompatiblepolicy, rest) = _take_global_runtime(args)
       rest.headOption match {
         case Some("server") | Some("client") | Some("command") =>
-          _parse_execute(rest, runtimeversion)
+          _parse_execute(rest, runtimeversion, selectionpolicy, nocompatiblepolicy)
         case Some("runtime") =>
           _parse_runtime(rest.tail)
         case Some(other) =>
@@ -72,9 +74,11 @@ object TextusCommandParser {
     }
   }
 
-  private def _take_global_runtime(args: Vector[String]): (Option[String], Vector[String]) = {
+  private def _take_global_runtime(args: Vector[String]): (Option[String], Option[RuntimeSelectionPolicy], Option[RuntimeNoCompatiblePolicy], Vector[String]) = {
     val out = Vector.newBuilder[String]
     var runtime: Option[String] = None
+    var selectionpolicy: Option[RuntimeSelectionPolicy] = None
+    var nocompatiblepolicy: Option[RuntimeNoCompatiblePolicy] = None
     var i = 0
     while (i < args.length) {
       args(i) match {
@@ -86,17 +90,35 @@ object TextusCommandParser {
         case x if x.startsWith("--runtime=") =>
           runtime = Some(x.stripPrefix("--runtime="))
           i += 1
+        case "--runtime-selection" =>
+          if (i + 1 >= args.length)
+            throw TextusException("--runtime-selection requires a value")
+          selectionpolicy = Some(RuntimeSelectionPolicy.parse(args(i + 1)))
+          i += 2
+        case x if x.startsWith("--runtime-selection=") =>
+          selectionpolicy = Some(RuntimeSelectionPolicy.parse(x.stripPrefix("--runtime-selection=")))
+          i += 1
+        case "--runtime-no-compatible" =>
+          if (i + 1 >= args.length)
+            throw TextusException("--runtime-no-compatible requires a value")
+          nocompatiblepolicy = Some(RuntimeNoCompatiblePolicy.parse(args(i + 1)))
+          i += 2
+        case x if x.startsWith("--runtime-no-compatible=") =>
+          nocompatiblepolicy = Some(RuntimeNoCompatiblePolicy.parse(x.stripPrefix("--runtime-no-compatible=")))
+          i += 1
         case x =>
           out += x
           i += 1
       }
     }
-    (runtime, out.result())
+    (runtime, selectionpolicy, nocompatiblepolicy, out.result())
   }
 
   private def _parse_execute(
     args: Vector[String],
-    runtimeversion: Option[String]
+    runtimeversion: Option[String],
+    selectionpolicy: Option[RuntimeSelectionPolicy],
+    nocompatiblepolicy: Option[RuntimeNoCompatiblePolicy]
   ): TextusCommand.Execute = {
     val mode = args.head
     val rest0 = args.tail
@@ -116,7 +138,7 @@ object TextusCommandParser {
           (ArtifactKind.Auto, pre)
       }
     val artifact = parseArtifact(rest1.head, kind)
-    TextusCommand.Execute(mode, artifact, rest1.tail, runtimeversion, effectivepassthrough)
+    TextusCommand.Execute(mode, artifact, rest1.tail, runtimeversion, selectionpolicy, nocompatiblepolicy, effectivepassthrough)
   }
 
   def parseArtifact(value: String, forcedkind: ArtifactKind = ArtifactKind.Auto): ArtifactSelector = {
@@ -199,5 +221,8 @@ object TextusCommandParser {
       |
       |Runtime:
       |  --runtime <version> overrides .textus/version and ~/.textus/version.
+      |  Without --runtime, component runtime.cncf requirements use current-compatible selection by default.
+      |  --runtime-selection=current-compatible|tested-latest|latest-compatible|newest-compatible selects the compatible runtime preference.
+      |  --runtime-no-compatible=error|newest controls the fallback when no compatible runtime exists.
       |""".stripMargin
 }
