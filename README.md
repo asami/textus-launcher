@@ -6,7 +6,7 @@ It keeps CNCF development commands separate from application operation:
 ```bash
 textus server textus-blog
 textus client textus-blog ...
-textus command textus-blog blog.post.search limit=10
+textus command textus-blog:0.1.0 blog.post.search limit=10
 textus runtime current
 ```
 
@@ -82,3 +82,15 @@ textus runtime config show
 has `.textus/`; otherwise it writes the global launcher version. Use `--project`
 or `--global` to force the target. A fresh install with no version file uses
 `recommended` from the runtime catalog.
+
+## Artifact Version Syntax
+
+Use `artifact:version` when selecting an explicit CAR/SAR version:
+
+```bash
+textus server textus-blog:0.1.0
+textus command textus-blog:0.1.0 blog.post.search limit=10
+```
+
+The older `artifact@version` spelling remains accepted for compatibility, but
+new documentation and scripts should use `artifact:version`.

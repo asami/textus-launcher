@@ -4,7 +4,7 @@ import java.nio.file.{Files, Path}
 
 /*
  * @since   May. 17, 2026
- * @version May. 18, 2026
+ * @version May. 20, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -28,13 +28,38 @@ object TextusLauncherSpec {
 
 final class TextusLauncherSpec {
   def parser(): Unit = {
-    val command = TextusCommandParser.parse(Vector("command", "textus-blog@0.1.0", "blog.post.search", "limit=10"))
+    val command = TextusCommandParser.parse(Vector("command", "textus-blog:0.1.0", "blog.post.search", "limit=10"))
       .asInstanceOf[TextusCommand.Execute]
     _assert_equals(command.mode, "command")
     _assert_equals(command.artifact.name, "textus-blog")
     _assert_equals(command.artifact.version, Some("0.1.0"))
     _assert_equals(command.artifact.kind, ArtifactKind.Auto)
     _assert_equals(command.args, Vector("blog.post.search", "limit=10"))
+
+    val legacy = TextusCommandParser.parse(Vector("server", "textus-blog@0.1.0"))
+      .asInstanceOf[TextusCommand.Execute]
+    _assert_equals(legacy.artifact.name, "textus-blog")
+    _assert_equals(legacy.artifact.version, Some("0.1.0"))
+
+    val forcedversion = TextusCommandParser.parse(Vector("server", "--car", "textus-blog:0.1.0"))
+      .asInstanceOf[TextusCommand.Execute]
+    _assert_equals(forcedversion.artifact.kind, ArtifactKind.Car)
+    _assert_equals(forcedversion.artifact.version, Some("0.1.0"))
+
+    val extversion = TextusCommandParser.parse(Vector("server", "textus-blog.car:0.1.0"))
+      .asInstanceOf[TextusCommand.Execute]
+    _assert_equals(extversion.artifact.name, "textus-blog")
+    _assert_equals(extversion.artifact.kind, ArtifactKind.Car)
+    _assert_equals(extversion.artifact.version, Some("0.1.0"))
+
+    val mixed =
+      try {
+        TextusCommandParser.parse(Vector("server", "textus-blog:0.1.0@other"))
+        false
+      } catch {
+        case e: TextusException => e.getMessage.contains("both")
+      }
+    assert(mixed)
 
     val forced = TextusCommandParser.parse(Vector("server", "--sar", "my-app"))
       .asInstanceOf[TextusCommand.Execute]
@@ -169,7 +194,7 @@ final class TextusLauncherSpec {
          |""".stripMargin)
     val invoker = FakeInvoker()
     val launcher = new TextusLauncher(paths, FakeResolver(), invoker)
-    launcher.run(Vector("command", "--car", "textus-blog@0.1.0", "blog.post.search", "limit=10"))
+    launcher.run(Vector("command", "--car", "textus-blog:0.1.0", "blog.post.search", "limit=10"))
     _assert_equals(invoker.lastArgs, Vector(
       s"--repository-dir=$carrepo",
       "--repository-dir=https://www.simplemodeling.org/repository/car",

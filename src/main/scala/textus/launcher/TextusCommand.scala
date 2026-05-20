@@ -2,7 +2,7 @@ package textus.launcher
 
 /*
  * @since   May. 17, 2026
- * @version May. 18, 2026
+ * @version May. 20, 2026
  * @author  ASAMI, Tomoharu
  */
 enum ArtifactKind {
@@ -15,7 +15,7 @@ final case class ArtifactSelector(
   kind: ArtifactKind = ArtifactKind.Auto
 ) {
   def display: String =
-    version.map(v => s"$name@$v").getOrElse(name)
+    version.map(v => s"$name:$v").getOrElse(name)
 }
 
 sealed trait TextusCommand
@@ -120,10 +120,14 @@ object TextusCommandParser {
   }
 
   def parseArtifact(value: String, forcedkind: ArtifactKind = ArtifactKind.Auto): ArtifactSelector = {
+    val colon = value.lastIndexOf(':')
     val at = value.lastIndexOf('@')
+    if (colon > 0 && at > 0)
+      throw TextusException(s"artifact version uses both ':' and '@': $value")
+    val separator = if (colon > 0) colon else at
     val (rawname, version) =
-      if (at > 0 && at + 1 < value.length)
-        (value.substring(0, at), Some(value.substring(at + 1)))
+      if (separator > 0 && separator + 1 < value.length)
+        (value.substring(0, separator), Some(value.substring(separator + 1)))
       else
         (value, None)
     val inferred =
@@ -165,9 +169,9 @@ object TextusCommandParser {
       |  textus --version
       |  textus version
       |  textus launcher version
-      |  textus server  <artifact>[@<version>] [options...]
-      |  textus client  <artifact>[@<version>] [args...]
-      |  textus command <artifact>[@<version>] <operation> [params...]
+      |  textus server  <artifact>[:<version>] [options...]
+      |  textus client  <artifact>[:<version>] [args...]
+      |  textus command <artifact>[:<version>] <operation> [params...]
       |  textus runtime current
       |  textus runtime list
       |  textus runtime local list
@@ -186,8 +190,12 @@ object TextusCommandParser {
       |  textus-blog          auto-detect CAR/SAR from repositories
       |  textus-blog.car      force CAR
       |  textus-blog.sar      force SAR
+      |  textus-blog:0.1.0    select artifact version
       |  --car textus-blog    force CAR
       |  --sar my-app         force SAR
+      |
+      |Compatibility:
+      |  artifact@version remains accepted as a legacy spelling.
       |
       |Runtime:
       |  --runtime <version> overrides .textus/version and ~/.textus/version.
