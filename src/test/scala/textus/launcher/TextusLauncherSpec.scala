@@ -183,6 +183,22 @@ final class TextusLauncherSpec {
   def executionRewritesToCncfArgs(): Unit = _with_temp_paths { paths =>
     val carrepo = paths.cwd.resolve("repo").resolve("car")
     _write(carrepo.resolve("textus-blog").resolve("0.1.0").resolve("textus-blog-0.1.0.car"), "")
+    _write(carrepo.resolve("textus-blog").resolve("0.1.1").resolve("textus-blog-0.1.1.car"), "")
+    _write(carrepo.resolve("textus-blog").resolve("maven-metadata.xml"),
+      """<?xml version="1.0" encoding="UTF-8"?>
+        |<metadata>
+        |  <groupId>org.simplemodeling.repository.car</groupId>
+        |  <artifactId>textus-blog</artifactId>
+        |  <versioning>
+        |    <latest>0.1.1</latest>
+        |    <release>0.1.1</release>
+        |    <versions>
+        |      <version>0.1.0</version>
+        |      <version>0.1.1</version>
+        |    </versions>
+        |  </versioning>
+        |</metadata>
+        |""".stripMargin)
     _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
       s"""runtime:
          |  version: 0.5.0
@@ -201,6 +217,17 @@ final class TextusLauncherSpec {
       "--repository-dir=https://www.simplemodeling.org/repository/sar",
       "--textus.component=textus-blog",
       "--textus.component.version=0.1.0",
+      "command",
+      "blog.post.search",
+      "limit=10"
+    ))
+    launcher.run(Vector("command", "--car", "textus-blog", "blog.post.search", "limit=10"))
+    _assert_equals(invoker.lastArgs, Vector(
+      s"--repository-dir=$carrepo",
+      "--repository-dir=https://www.simplemodeling.org/repository/car",
+      "--repository-dir=https://www.simplemodeling.org/repository/sar",
+      "--textus.component=textus-blog",
+      "--textus.component.version=0.1.1",
       "command",
       "blog.post.search",
       "limit=10"

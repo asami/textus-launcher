@@ -6,7 +6,7 @@ import scala.util.Using
 
 /*
  * @since   May. 17, 2026
- * @version May. 17, 2026
+ * @version May. 20, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class ResolvedArtifact(
@@ -18,68 +18,85 @@ final class ArtifactResolver {
   def resolve(selector: ArtifactSelector, config: LauncherConfig): ResolvedArtifact =
     selector.kind match {
       case ArtifactKind.Car =>
-        if (_exists(selector, config.carRepositories, ".car"))
-          ResolvedArtifact(selector, ArtifactKind.Car)
-        else
-          throw TextusException(s"CAR artifact not found in repositories: ${selector.display}")
+        _resolve_version(selector, config.carRepositories, ".car") match {
+          case Some(version) => ResolvedArtifact(selector.copy(kind = ArtifactKind.Car, version = Some(version)), ArtifactKind.Car)
+          case None =>
+            throw TextusException(s"CAR artifact not found in repositories: ${selector.display}")
+        }
       case ArtifactKind.Sar =>
-        if (_exists(selector, config.sarRepositories, ".sar"))
-          ResolvedArtifact(selector, ArtifactKind.Sar)
-        else
-          throw TextusException(s"SAR artifact not found in repositories: ${selector.display}")
+        _resolve_version(selector, config.sarRepositories, ".sar") match {
+          case Some(version) => ResolvedArtifact(selector.copy(kind = ArtifactKind.Sar, version = Some(version)), ArtifactKind.Sar)
+          case None =>
+            throw TextusException(s"SAR artifact not found in repositories: ${selector.display}")
+        }
       case ArtifactKind.Auto =>
-        val car = _exists(selector, config.carRepositories, ".car")
-        val sar = _exists(selector, config.sarRepositories, ".sar")
-        (car, sar) match {
-          case (true, false) => ResolvedArtifact(selector.copy(kind = ArtifactKind.Car), ArtifactKind.Car)
-          case (false, true) => ResolvedArtifact(selector.copy(kind = ArtifactKind.Sar), ArtifactKind.Sar)
-          case (true, true) =>
+        val carversion = _resolve_version(selector, config.carRepositories, ".car")
+        val sarversion = _resolve_version(selector, config.sarRepositories, ".sar")
+        (carversion, sarversion) match {
+          case (Some(version), None) =>
+            ResolvedArtifact(selector.copy(kind = ArtifactKind.Car, version = Some(version)), ArtifactKind.Car)
+          case (None, Some(version)) =>
+            ResolvedArtifact(selector.copy(kind = ArtifactKind.Sar, version = Some(version)), ArtifactKind.Sar)
+          case (Some(_), Some(_)) =>
             throw TextusException(s"artifact is ambiguous between CAR and SAR: ${selector.display}; use --car or --sar")
-          case (false, false) =>
+          case (None, None) =>
             throw TextusException(s"artifact not found in CAR/SAR repositories: ${selector.display}")
         }
     }
 
-  private def _exists(
+  private def _resolve_version(
     selector: ArtifactSelector,
     repositories: Vector[String],
     suffix: String
-  ): Boolean =
-    repositories.exists(repo => _exists_in_repository(selector, repo, suffix))
+  ): Option[String] =
+    repositories.view.flatMap(repo => _resolve_version_in_repository(selector, repo, suffix)).headOption
 
-  private def _exists_in_repository(
+  private def _resolve_version_in_repository(
     selector: ArtifactSelector,
     repository: String,
     suffix: String
-  ): Boolean =
+  ): Option[String] =
     if (_is_url(repository))
-      _remote_exists(selector, repository, suffix)
+      _remote_resolve_version(selector, repository, suffix)
     else
-      _local_exists(selector, Paths.get(repository), suffix)
+      _local_resolve_version(selector, Paths.get(repository), suffix)
 
-  private def _local_exists(
+  private def _local_resolve_version(
     selector: ArtifactSelector,
     repository: Path,
     suffix: String
-  ): Boolean = {
+  ): Option[String] = {
     val root = repository.resolve(selector.name)
     if (!Files.isDirectory(root)) {
-      false
+      None
     } else {
-      val versions = selector.version.map(Vector(_)).getOrElse(_version_dirs(root))
-      versions.exists(v => Files.isRegularFile(root.resolve(v).resolve(s"${selector.name}-$v$suffix")))
+      val versions = selector.version.map(Vector(_)).getOrElse(_local_versions(root))
+      versions.find(v => Files.isRegularFile(root.resolve(v).resolve(s"${selector.name}-$v$suffix")))
     }
   }
 
-  private def _remote_exists(
+  private def _remote_resolve_version(
     selector: ArtifactSelector,
     repository: String,
     suffix: String
-  ): Boolean = {
+  ): Option[String] = {
     val versions = selector.version.map(Vector(_)).getOrElse(_remote_versions(repository, selector.name))
-    versions.exists { v =>
+    versions.find { v =>
       val url = _join(repository, selector.name, v, s"${selector.name}-$v$suffix")
       _head(url)
+    }
+  }
+
+  private def _local_versions(root: Path): Vector[String] =
+    _local_metadata_versions(root).getOrElse(_version_dirs(root))
+
+  private def _local_metadata_versions(root: Path): Option[Vector[String]] = {
+    val metadata = root.resolve("maven-metadata.xml")
+    if (Files.isRegularFile(metadata)) {
+      val text = Files.readString(metadata)
+      Some(_metadata_versions(text))
+    } else {
+      None
     }
   }
 
@@ -90,12 +107,16 @@ final class ArtifactResolver {
       connection.setConnectTimeout(2000)
       connection.setReadTimeout(5000)
       val text = Using.resource(scala.io.Source.fromInputStream(connection.getInputStream, "UTF-8"))(_.mkString)
-      val latest = _first_tag(text, "latest").orElse(_first_tag(text, "release")).toVector
-      val versions = "<version>([^<]+)</version>".r.findAllMatchIn(text).map(_.group(1).trim).filter(_.nonEmpty).toVector
-      (latest ++ versions.reverse).distinct
+      _metadata_versions(text)
     } catch {
       case _: Throwable => Vector.empty
     }
+  }
+
+  private def _metadata_versions(text: String): Vector[String] = {
+    val latest = _first_tag(text, "latest").orElse(_first_tag(text, "release")).toVector
+    val versions = "<version>([^<]+)</version>".r.findAllMatchIn(text).map(_.group(1).trim).filter(_.nonEmpty).toVector
+    (latest ++ versions.reverse).distinct
   }
 
   private def _head(url: String): Boolean =
