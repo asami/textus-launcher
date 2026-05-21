@@ -58,6 +58,23 @@ repositories:
 
 Project repositories are searched before the standard SimpleModeling.org
 repositories. The standard repositories remain enabled as fallback.
+The launcher also searches the local CNCF repository before public
+repositories:
+
+```text
+~/.cncf/repository/repository/car
+~/.cncf/repository/repository/sar
+```
+
+Use `sbt cozyPublishLocalCar` or `sbt cozyPublishLocalSar` while developing
+dependency components. Those tasks write local CAR/SAR artifacts, catalogs, and
+derived `maven-metadata.xml` under `~/.cncf/repository`. This directory is local
+publish state. `~/.cncf/cache` is remote artifact cache and is managed
+separately.
+
+`.cozy/config.yaml` controls build/publish operation defaults. `.textus` and
+`.cncf` launcher configs control runtime lookup. `project.yaml` describes
+artifact metadata and runtime compatibility.
 
 ## Runtime Management
 

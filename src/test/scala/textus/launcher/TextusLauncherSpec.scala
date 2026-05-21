@@ -11,6 +11,7 @@ object TextusLauncherSpec {
   def main(args: Array[String]): Unit = {
     val spec = new TextusLauncherSpec
     spec.parser()
+    spec.helpExplainsLocalRepository()
     spec.launcherVersion()
     spec.configMerge()
     spec.runtimeVersionPrecedence()
@@ -19,6 +20,7 @@ object TextusLauncherSpec {
     spec.runtimeCatalogParseAndSelectorResolution()
     spec.runtimeCatalogCommands()
     spec.executionRewritesToCncfArgs()
+    spec.localRepositoryResolvesArtifactWithoutConfig()
     spec.artifactCatalogUsesCurrentCompatibleRuntimeByDefault()
     spec.artifactCatalogCanSelectLatestTestedRuntime()
     spec.artifactCatalogCanSelectLatestCompatibleRuntime()
@@ -96,6 +98,13 @@ final class TextusLauncherSpec {
     _assert_equals(autouse.target, TextusCommand.RuntimeUseTarget.Auto)
   }
 
+  def helpExplainsLocalRepository(): Unit = {
+    val help = TextusCommandParser.helpText
+    assert(help.contains("~/.cncf/repository/repository/car"))
+    assert(help.contains("cozyPublishLocalCar"))
+    assert(help.contains("~/.cncf/repository is local publish state"))
+  }
+
   def launcherVersion(): Unit = _with_temp_paths { paths =>
     val launcher = new TextusLauncher(paths, FakeResolver(), FakeInvoker())
     val (code, output) = _capture_stdout {
@@ -132,6 +141,8 @@ final class TextusLauncherSpec {
     assert(config.carRepositories.head == "https://project.example/car")
     assert(config.carRepositories(1) == "https://global.example/car")
     assert(config.sarRepositories.head == "https://global.example/sar")
+    assert(config.carRepositories.contains(paths.localCarRepository.toString))
+    assert(config.sarRepositories.contains(paths.localSarRepository.toString))
     assert(config.carRepositories.contains("https://www.simplemodeling.org/repository/car"))
   }
 
@@ -233,7 +244,9 @@ final class TextusLauncherSpec {
     launcher.run(Vector("command", "--car", "textus-blog:0.1.0", "blog.post.search", "limit=10"))
     _assert_equals(invoker.lastArgs, Vector(
       s"--repository-dir=$carrepo",
+      s"--repository-dir=${paths.localCarRepository}",
       "--repository-dir=https://www.simplemodeling.org/repository/car",
+      s"--repository-dir=${paths.localSarRepository}",
       "--repository-dir=https://www.simplemodeling.org/repository/sar",
       "--textus.component=textus-blog",
       "--textus.component.version=0.1.0",
@@ -244,7 +257,9 @@ final class TextusLauncherSpec {
     launcher.run(Vector("command", "--car", "textus-blog", "blog.post.search", "limit=10"))
     _assert_equals(invoker.lastArgs, Vector(
       s"--repository-dir=$carrepo",
+      s"--repository-dir=${paths.localCarRepository}",
       "--repository-dir=https://www.simplemodeling.org/repository/car",
+      s"--repository-dir=${paths.localSarRepository}",
       "--repository-dir=https://www.simplemodeling.org/repository/sar",
       "--textus.component=textus-blog",
       "--textus.component.version=0.1.1",
@@ -252,6 +267,28 @@ final class TextusLauncherSpec {
       "blog.post.search",
       "limit=10"
     ))
+  }
+
+  def localRepositoryResolvesArtifactWithoutConfig(): Unit = _with_temp_paths { paths =>
+    _write(paths.localCarRepository.resolve("textus-local").resolve("maven-metadata.xml"),
+      """<metadata>
+        |  <groupId>org.simplemodeling.repository.car</groupId>
+        |  <artifactId>textus-local</artifactId>
+        |  <versioning>
+        |    <latest>0.1.0</latest>
+        |    <versions><version>0.1.0</version></versions>
+        |  </versioning>
+        |</metadata>
+        |""".stripMargin)
+    _write(paths.localCarRepository.resolve("textus-local").resolve("0.1.0").resolve("textus-local-0.1.0.car"), "car")
+    val invoker = FakeInvoker()
+    val launcher = new TextusLauncher(paths, FakeResolver(), invoker)
+    val code = launcher.run(Vector("server", "textus-local"))
+
+    _assert_equals(code, 0)
+    assert(invoker.lastArgs.contains(s"--repository-dir=${paths.localCarRepository}"))
+    assert(invoker.lastArgs.contains("--textus.component=textus-local"))
+    assert(invoker.lastArgs.contains("--textus.component.version=0.1.0"))
   }
 
   def artifactCatalogUsesCurrentCompatibleRuntimeByDefault(): Unit = _with_temp_paths { paths =>

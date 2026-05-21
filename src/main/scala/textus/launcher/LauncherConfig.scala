@@ -31,9 +31,12 @@ final case class LauncherConfig(
     )
 
   def normalizedWithDefaults: LauncherConfig =
+    normalizedWithDefaults(LauncherPaths())
+
+  def normalizedWithDefaults(paths: LauncherPaths): LauncherConfig =
     copy(
-      carRepositories = _append_defaults(carRepositories, LauncherConfig.DEFAULT_CAR_REPOSITORIES),
-      sarRepositories = _append_defaults(sarRepositories, LauncherConfig.DEFAULT_SAR_REPOSITORIES),
+      carRepositories = _append_defaults(carRepositories, LauncherConfig.localCarRepositories(paths) ++ LauncherConfig.DEFAULT_CAR_REPOSITORIES),
+      sarRepositories = _append_defaults(sarRepositories, LauncherConfig.localSarRepositories(paths) ++ LauncherConfig.DEFAULT_SAR_REPOSITORIES),
       mavenRepositories = _append_defaults(mavenRepositories, LauncherConfig.DEFAULT_MAVEN_REPOSITORIES),
       runtimeSelectionPolicy = runtimeSelectionPolicy.orElse(Some(RuntimeSelectionPolicy.CurrentCompatible)),
       runtimeNoCompatiblePolicy = runtimeNoCompatiblePolicy.orElse(Some(RuntimeNoCompatiblePolicy.Error)),
@@ -83,7 +86,7 @@ object LauncherConfig {
     LauncherConfig()
       .mergeHigher(global)
       .mergeHigher(project)
-      .normalizedWithDefaults
+      .normalizedWithDefaults(paths)
   }
 
   def loadFile(path: Path): LauncherConfig =
@@ -114,8 +117,18 @@ object LauncherConfig {
     )
   }
 
+  def localCarRepositories(paths: LauncherPaths): Vector[String] =
+    Vector(paths.localCarRepository.toString)
+
+  def localSarRepositories(paths: LauncherPaths): Vector[String] =
+    Vector(paths.localSarRepository.toString)
+
   def render(config: LauncherConfig): String = {
-    val c = config.normalizedWithDefaults
+    val c =
+      if (_has_local_repository(config))
+        config
+      else
+        config.normalizedWithDefaults
     val runtime = c.runtimeVersion.getOrElse("(not configured)")
     val catalog = c.runtimeCatalogUrl.getOrElse("(not configured)")
     val selection = c.runtimeSelectionPolicy.map(RuntimeSelectionPolicy.render).getOrElse("current-compatible")
@@ -124,15 +137,24 @@ object LauncherConfig {
     val sars = c.sarRepositories.mkString(", ")
     val mavens = c.mavenRepositories.mkString(", ")
     val coursiers = c.coursierRepositories.mkString(", ")
+    val localrepository =
+      c.carRepositories.find(_.contains("/.cncf/repository/repository/car")).
+        map(_.stripSuffix("/repository/car")).
+        getOrElse("~/.cncf/repository")
     s"""runtime.version: $runtime
        |runtime.catalog.url: $catalog
        |runtime.cncf.selectionPolicy: $selection
        |runtime.cncf.noCompatiblePolicy: $nocompatible
+       |local.repository: $localrepository
+       |local.repository.note: local CAR/SAR publish target; ~/.cncf/cache is remote artifact cache
        |repositories.car: $cars
        |repositories.sar: $sars
        |repositories.maven: $mavens
        |repositories.coursier: $coursiers""".stripMargin
   }
+
+  private def _has_local_repository(config: LauncherConfig): Boolean =
+    (config.carRepositories ++ config.sarRepositories).exists(_.contains("/.cncf/repository/repository/"))
 }
 
 object SimpleYaml {

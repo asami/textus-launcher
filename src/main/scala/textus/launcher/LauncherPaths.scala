@@ -4,7 +4,7 @@ import java.nio.file.{Path, Paths}
 
 /*
  * @since   May. 17, 2026
- * @version May. 17, 2026
+ * @version May. 22, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class LauncherPaths(
@@ -20,4 +20,7 @@ final case class LauncherPaths(
   val runtimeRoot: Path = cncfHome.resolve("runtimes")
   val runtimeCatalog: Path = cncfHome.resolve("catalog").resolve("textus").resolve("runtime-catalog.yaml")
   val coursierCache: Path = cncfHome.resolve("cache").resolve("coursier")
+  val localRepository: Path = cncfHome.resolve("repository")
+  val localCarRepository: Path = localRepository.resolve("repository").resolve("car")
+  val localSarRepository: Path = localRepository.resolve("repository").resolve("sar")
 }
