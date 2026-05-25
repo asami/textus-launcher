@@ -4,7 +4,7 @@ import java.nio.file.Files
 
 /*
  * @since   May. 17, 2026
- * @version May. 22, 2026
+ * @version May. 25, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
@@ -92,6 +92,7 @@ final class TextusLauncher(
         println(s"textus home: ${paths.textusHome}")
         println(s"cncf home: ${paths.cncfHome}")
         println(s"local repository: ${paths.localRepository}")
+        println(s"artifact cache: ${paths.cacheRepository}")
         println(s"runtime cache: ${paths.runtimeRoot}")
         println(s"coursier cache: ${paths.coursierCache}")
         0

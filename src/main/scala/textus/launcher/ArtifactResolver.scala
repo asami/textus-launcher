@@ -6,7 +6,7 @@ import scala.util.Using
 
 /*
  * @since   May. 17, 2026
- * @version May. 21, 2026
+ * @version May. 25, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class ResolvedArtifact(
@@ -22,13 +22,13 @@ final class ArtifactResolver {
         _resolve_artifact(selector, config.carRepositories, ".car") match {
           case Some(resolved) => resolved.copy(selector = resolved.selector.copy(kind = ArtifactKind.Car), kind = ArtifactKind.Car)
           case None =>
-            throw TextusException(s"CAR artifact not found in repositories: ${selector.display}")
+            throw TextusException(_not_found_message("CAR", selector))
         }
       case ArtifactKind.Sar =>
         _resolve_artifact(selector, config.sarRepositories, ".sar") match {
           case Some(resolved) => resolved.copy(selector = resolved.selector.copy(kind = ArtifactKind.Sar), kind = ArtifactKind.Sar)
           case None =>
-            throw TextusException(s"SAR artifact not found in repositories: ${selector.display}")
+            throw TextusException(_not_found_message("SAR", selector))
         }
       case ArtifactKind.Auto =>
         val carartifact = _resolve_artifact(selector, config.carRepositories, ".car")
@@ -41,7 +41,7 @@ final class ArtifactResolver {
           case (Some(_), Some(_)) =>
             throw TextusException(s"artifact is ambiguous between CAR and SAR: ${selector.display}; use --car or --sar")
           case (None, None) =>
-            throw TextusException(s"artifact not found in CAR/SAR repositories: ${selector.display}")
+            throw TextusException(_not_found_message("artifact", selector))
         }
     }
 
@@ -50,7 +50,7 @@ final class ArtifactResolver {
     repositories: Vector[String],
     suffix: String
   ): Option[ResolvedArtifact] =
-    repositories.view.flatMap(repo => _resolve_artifact_in_repository(selector, repo, suffix)).headOption
+    _effective_repositories(selector, repositories).view.flatMap(repo => _resolve_artifact_in_repository(selector, repo, suffix)).headOption
 
   private def _resolve_artifact_in_repository(
     selector: ArtifactSelector,
@@ -203,6 +203,35 @@ final class ArtifactResolver {
 
   private def _is_url(value: String): Boolean =
     value.startsWith("http://") || value.startsWith("https://")
+
+  private def _effective_repositories(
+    selector: ArtifactSelector,
+    repositories: Vector[String]
+  ): Vector[String] =
+    if (selector.version.exists(_is_snapshot_version))
+      repositories.filterNot(_is_url).filterNot(_is_cache_repository)
+    else
+      repositories
+
+  private def _is_snapshot_version(version: String): Boolean =
+    version.toUpperCase(java.util.Locale.ROOT).endsWith("-SNAPSHOT")
+
+  private def _is_cache_repository(repository: String): Boolean =
+    repository.contains("/.cncf/cache/")
+
+  private def _not_found_message(
+    kind: String,
+    selector: ArtifactSelector
+  ): String =
+    selector.version match {
+      case Some(version) if _is_snapshot_version(version) =>
+        s"snapshot component not found locally: ${selector.display}; run sbt cozyPublishLocalCar"
+      case _ =>
+        if (kind == "artifact")
+          s"artifact not found in CAR/SAR repositories: ${selector.display}"
+        else
+          s"${kind} artifact not found in repositories: ${selector.display}"
+    }
 
   private def _kind_from_suffix(suffix: String): ArtifactKind =
     if (suffix == ".sar") ArtifactKind.Sar else ArtifactKind.Car

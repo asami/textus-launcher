@@ -2,7 +2,7 @@ package textus.launcher
 
 /*
  * @since   May. 17, 2026
- * @version May. 22, 2026
+ * @version May. 25, 2026
  * @author  ASAMI, Tomoharu
  */
 enum ArtifactKind {
@@ -215,9 +215,10 @@ object TextusCommandParser {
       |  textus-blog:0.1.0    select artifact version
       |  --car textus-blog    force CAR
       |  --sar my-app         force SAR
-      |  ~/.cncf/repository/repository/car and ~/.cncf/repository/repository/sar are searched before public repositories.
+      |  ~/.cncf/local/repository/car and ~/.cncf/local/repository/sar are searched before cache and public repositories.
       |  Use sbt cozyPublishLocalCar or sbt cozyPublishLocalSar while developing dependency components.
-      |  ~/.cncf/repository is local publish state; ~/.cncf/cache is remote artifact cache.
+      |  ~/.cncf/local is developer local publish state; ~/.cncf/cache is runtime-managed remote artifact cache.
+      |  Snapshot components are local-only by default; missing snapshots should be published with sbt cozyPublishLocalCar.
       |
       |Compatibility:
       |  artifact@version remains accepted as a legacy spelling.

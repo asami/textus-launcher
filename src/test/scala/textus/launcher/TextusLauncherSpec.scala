@@ -4,7 +4,7 @@ import java.nio.file.{Files, Path}
 
 /*
  * @since   May. 17, 2026
- * @version May. 21, 2026
+ * @version May. 25, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -21,6 +21,7 @@ object TextusLauncherSpec {
     spec.runtimeCatalogCommands()
     spec.executionRewritesToCncfArgs()
     spec.localRepositoryResolvesArtifactWithoutConfig()
+    spec.snapshotArtifactDoesNotFallThroughToCacheOrPublic()
     spec.artifactCatalogUsesCurrentCompatibleRuntimeByDefault()
     spec.artifactCatalogCanSelectLatestTestedRuntime()
     spec.artifactCatalogCanSelectLatestCompatibleRuntime()
@@ -100,9 +101,10 @@ final class TextusLauncherSpec {
 
   def helpExplainsLocalRepository(): Unit = {
     val help = TextusCommandParser.helpText
-    assert(help.contains("~/.cncf/repository/repository/car"))
+    assert(help.contains("~/.cncf/local/repository/car"))
     assert(help.contains("cozyPublishLocalCar"))
-    assert(help.contains("~/.cncf/repository is local publish state"))
+    assert(help.contains("~/.cncf/local is developer local publish state"))
+    assert(help.contains("Snapshot components are local-only"))
   }
 
   def launcherVersion(): Unit = _with_temp_paths { paths =>
@@ -143,6 +145,8 @@ final class TextusLauncherSpec {
     assert(config.sarRepositories.head == "https://global.example/sar")
     assert(config.carRepositories.contains(paths.localCarRepository.toString))
     assert(config.sarRepositories.contains(paths.localSarRepository.toString))
+    assert(config.carRepositories.contains(paths.cacheCarRepository.toString))
+    assert(config.sarRepositories.contains(paths.cacheSarRepository.toString))
     assert(config.carRepositories.contains("https://www.simplemodeling.org/repository/car"))
   }
 
@@ -245,8 +249,10 @@ final class TextusLauncherSpec {
     _assert_equals(invoker.lastArgs, Vector(
       s"--repository-dir=$carrepo",
       s"--repository-dir=${paths.localCarRepository}",
+      s"--repository-dir=${paths.cacheCarRepository}",
       "--repository-dir=https://www.simplemodeling.org/repository/car",
       s"--repository-dir=${paths.localSarRepository}",
+      s"--repository-dir=${paths.cacheSarRepository}",
       "--repository-dir=https://www.simplemodeling.org/repository/sar",
       "--textus.component=textus-blog",
       "--textus.component.version=0.1.0",
@@ -258,8 +264,10 @@ final class TextusLauncherSpec {
     _assert_equals(invoker.lastArgs, Vector(
       s"--repository-dir=$carrepo",
       s"--repository-dir=${paths.localCarRepository}",
+      s"--repository-dir=${paths.cacheCarRepository}",
       "--repository-dir=https://www.simplemodeling.org/repository/car",
       s"--repository-dir=${paths.localSarRepository}",
+      s"--repository-dir=${paths.cacheSarRepository}",
       "--repository-dir=https://www.simplemodeling.org/repository/sar",
       "--textus.component=textus-blog",
       "--textus.component.version=0.1.1",
@@ -289,6 +297,23 @@ final class TextusLauncherSpec {
     assert(invoker.lastArgs.contains(s"--repository-dir=${paths.localCarRepository}"))
     assert(invoker.lastArgs.contains("--textus.component=textus-local"))
     assert(invoker.lastArgs.contains("--textus.component.version=0.1.0"))
+  }
+
+  def snapshotArtifactDoesNotFallThroughToCacheOrPublic(): Unit = _with_temp_paths { paths =>
+    _write(paths.cacheCarRepository.resolve("textus-snapshot").resolve("0.1.1-SNAPSHOT").resolve("textus-snapshot-0.1.1-SNAPSHOT.car"), "car")
+    val invoker = FakeInvoker()
+    val launcher = new TextusLauncher(paths, FakeResolver(), invoker)
+    val failed =
+      try {
+        launcher.run(Vector("server", "textus-snapshot:0.1.1-SNAPSHOT"))
+        false
+      } catch {
+        case e: TextusException =>
+          e.getMessage.contains("snapshot component not found locally") &&
+            e.getMessage.contains("cozyPublishLocalCar")
+      }
+    assert(failed)
+    assert(invoker.lastArgs.isEmpty)
   }
 
   def artifactCatalogUsesCurrentCompatibleRuntimeByDefault(): Unit = _with_temp_paths { paths =>
