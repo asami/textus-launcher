@@ -4,7 +4,7 @@ import java.nio.file.Files
 
 /*
  * @since   May. 17, 2026
- * @version May. 25, 2026
+ * @version May. 27, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
@@ -13,8 +13,9 @@ final class TextusLauncher(
   cncfinvoker: CncfInvoker = CncfInvoker()
 ) {
   def run(args: Vector[String]): Int = {
-    val config = LauncherConfig.load(paths)
-    val command = TextusCommandParser.parse(args)
+    val (configfiles, commandargs) = _take_config_options(args)
+    val config = LauncherConfig.load(paths, configfiles)
+    val command = TextusCommandParser.parse(commandargs)
     command match {
       case TextusCommand.Version =>
         println(s"${LauncherBuildInfo.name} ${LauncherBuildInfo.version}")
@@ -113,6 +114,41 @@ final class TextusLauncher(
           TextusCommand.RuntimeUseTarget.Global
       case x => x
     }
+
+  private def _take_config_options(args: Vector[String]): (Vector[String], Vector[String]) = {
+    val configfiles = Vector.newBuilder[String]
+    val commandargs = Vector.newBuilder[String]
+    var i = 0
+    var passthrough = false
+    while (i < args.length) {
+      if (passthrough) {
+        commandargs += args(i)
+        i += 1
+      } else {
+        args(i) match {
+          case "--" =>
+            passthrough = true
+            commandargs += args(i)
+            i += 1
+          case "--config" | "--launcher-config" =>
+            if (i + 1 >= args.length)
+              throw TextusException(s"${args(i)} requires a file")
+            configfiles += args(i + 1)
+            i += 2
+          case x if x.startsWith("--config=") =>
+            configfiles += x.stripPrefix("--config=")
+            i += 1
+          case x if x.startsWith("--launcher-config=") =>
+            configfiles += x.stripPrefix("--launcher-config=")
+            i += 1
+          case x =>
+            commandargs += x
+            i += 1
+        }
+      }
+    }
+    (configfiles.result(), commandargs.result())
+  }
 
   private def _run_execute(
     command: TextusCommand.Execute,

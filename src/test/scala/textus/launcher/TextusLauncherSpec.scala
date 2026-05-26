@@ -4,7 +4,7 @@ import java.nio.file.{Files, Path}
 
 /*
  * @since   May. 17, 2026
- * @version May. 25, 2026
+ * @version May. 27, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -14,6 +14,7 @@ object TextusLauncherSpec {
     spec.helpExplainsLocalRepository()
     spec.launcherVersion()
     spec.configMerge()
+    spec.launcherConfigSupportsPropertiesAndConfFiles()
     spec.runtimeVersionPrecedence()
     spec.runtimeUseWritesExpectedFiles()
     spec.runtimeUseAutoSelectsProjectWhenTextusDirectoryExists()
@@ -105,6 +106,7 @@ final class TextusLauncherSpec {
     assert(help.contains("cozyPublishLocalCar"))
     assert(help.contains("~/.cncf/local is developer local publish state"))
     assert(help.contains("Snapshot components are local-only"))
+    assert(help.contains("yaml/yml, properties/props, and lightweight conf"))
   }
 
   def launcherVersion(): Unit = _with_temp_paths { paths =>
@@ -148,6 +150,29 @@ final class TextusLauncherSpec {
     assert(config.carRepositories.contains(paths.cacheCarRepository.toString))
     assert(config.sarRepositories.contains(paths.cacheSarRepository.toString))
     assert(config.carRepositories.contains("https://www.simplemodeling.org/repository/car"))
+  }
+
+  def launcherConfigSupportsPropertiesAndConfFiles(): Unit = _with_temp_paths { paths =>
+    _write(paths.cwd.resolve("etc").resolve("launcher.properties"),
+      """runtime.version = 0.2.0
+        |repositories.car = https://properties.example/car
+        |""".stripMargin)
+    _write(paths.cwd.resolve("etc").resolve("launcher.conf"),
+      """runtime.cncf.selection-policy = latest
+        |runtime.cncf.no-compatible-policy = newest
+        |repositories.maven: https://conf.example/maven
+        |""".stripMargin)
+    val config = LauncherConfig.load(paths, Vector("etc/launcher.properties", "etc/launcher.conf"))
+    _assert_equals(config.runtimeVersion, Some("0.2.0"))
+    _assert_equals(config.runtimeSelectionPolicy, Some(RuntimeSelectionPolicy.LatestCompatible))
+    _assert_equals(config.runtimeNoCompatiblePolicy, Some(RuntimeNoCompatiblePolicy.Newest))
+    assert(config.carRepositories.head == "https://properties.example/car")
+    assert(config.mavenRepositories.head == "https://conf.example/maven")
+
+    val resolver = FakeResolver()
+    val launcher = new TextusLauncher(paths, resolver, FakeInvoker())
+    launcher.run(Vector("--config", "etc/launcher.properties", "runtime", "current"))
+    _assert_equals(resolver.resolvedVersions, Vector("0.2.0"))
   }
 
   def runtimeVersionPrecedence(): Unit = _with_temp_paths { paths =>

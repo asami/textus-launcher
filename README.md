@@ -11,8 +11,8 @@ textus runtime current
 ```
 
 The launcher resolves a selected CNCF runtime and invokes
-`org.goldenport.cncf.CncfMain` in the same JVM process. Runtime and project
-configuration is read only from:
+`org.goldenport.cncf.CncfMain` in the same JVM process. Textus launcher
+configuration is read from:
 
 - `~/.textus/config.yaml`
 - `$PWD/.textus/config.yaml`
@@ -31,13 +31,19 @@ deployment timing.
 
 ## Configuration
 
-`textus` reads only two configuration files:
+`textus` reads two standard launcher configuration files:
 
 1. `~/.textus/config.yaml`
 2. `$PWD/.textus/config.yaml`
 
-The current directory file overrides the home file. Command-line options
-override both.
+The current directory file overrides the home file. Use `--config <file>` for
+an additional Textus launcher config file. Command-line options override both
+standard config files and explicit launcher config files.
+
+Textus launcher config is intentionally lightweight. It supports `yaml` /
+`yml`, `properties` / `props`, and lightweight `conf` files with dotted keys.
+JSON, XML, and full HOCON are runtime/application config formats, not launcher
+config formats.
 
 Example:
 
@@ -73,9 +79,13 @@ developer-owned local publish state. `~/.cncf/cache` is runtime-managed remote
 artifact cache and is managed separately. Snapshot components are local-only by
 default; missing snapshots should be published with `sbt cozyPublishLocalCar`.
 
-`.cozy/config.yaml` controls build/publish operation defaults. `.textus` and
-`.cncf` launcher configs control runtime lookup. `project.yaml` describes
-artifact metadata and runtime compatibility.
+`.cozy/config.yaml` controls build/publish operation defaults.
+`.textus/config.yaml` controls the user-facing Textus launcher. The `cncf`
+developer launcher uses `.cncf/launcher.yaml`, not `.cncf/config.yaml`.
+`.cncf/config.yaml` and `.textus/config.yaml` may also be consumed by the CNCF
+runtime after the launcher starts it, depending on runtime configuration
+resolution. `project.yaml` describes artifact metadata and runtime
+compatibility.
 
 ## Runtime Management
 

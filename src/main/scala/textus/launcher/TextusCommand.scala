@@ -2,7 +2,7 @@ package textus.launcher
 
 /*
  * @since   May. 17, 2026
- * @version May. 25, 2026
+ * @version May. 27, 2026
  * @author  ASAMI, Tomoharu
  */
 enum ArtifactKind {
@@ -225,6 +225,9 @@ object TextusCommandParser {
       |
       |Runtime:
       |  --runtime <version> overrides .textus/version and ~/.textus/version.
+      |  --config <file> loads an additional Textus launcher config file.
+      |  Textus launcher config supports yaml/yml, properties/props, and lightweight conf files.
+      |  JSON, XML, and full HOCON are runtime/application config formats, not launcher config formats.
       |  Without --runtime, component runtime.cncf requirements use current-compatible selection by default.
       |  --runtime-selection=current-compatible|tested-latest|latest-compatible|newest-compatible selects the compatible runtime preference.
       |  --runtime-no-compatible=error|newest controls the fallback when no compatible runtime exists.

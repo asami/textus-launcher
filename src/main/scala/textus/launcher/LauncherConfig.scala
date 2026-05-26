@@ -5,7 +5,7 @@ import java.nio.file.{Files, Path}
 
 /*
  * @since   May. 17, 2026
- * @version May. 25, 2026
+ * @version May. 27, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class LauncherConfig(
@@ -80,22 +80,37 @@ object LauncherConfig {
   val DEFAULT_SAR_REPOSITORIES = Vector("https://www.simplemodeling.org/repository/sar")
   val DEFAULT_MAVEN_REPOSITORIES = Vector("https://www.simplemodeling.org/repository/maven")
 
-  def load(paths: LauncherPaths): LauncherConfig = {
+  def load(paths: LauncherPaths): LauncherConfig =
+    load(paths, Vector.empty)
+
+  def load(
+    paths: LauncherPaths,
+    configfiles: Vector[String]
+  ): LauncherConfig = {
     val global = loadFile(paths.globalConfig)
     val project = loadFile(paths.projectConfig)
-    LauncherConfig()
+    val base = LauncherConfig()
       .mergeHigher(global)
       .mergeHigher(project)
-      .normalizedWithDefaults(paths)
+    val explicit = configfiles.foldLeft(base) { (acc, file) =>
+      acc.mergeHigher(loadRequiredFile(paths.cwd.resolve(file).normalize.toAbsolutePath.normalize))
+    }
+    explicit.normalizedWithDefaults(paths)
   }
 
   def loadFile(path: Path): LauncherConfig =
     if (Files.isRegularFile(path)) {
       val text = Files.readString(path, StandardCharsets.UTF_8)
-      fromParsed(SimpleYaml.parse(text))
+      fromParsed(LauncherConfigParser.parse(path, text))
     } else {
       LauncherConfig()
     }
+
+  def loadRequiredFile(path: Path): LauncherConfig =
+    if (Files.isRegularFile(path))
+      loadFile(path)
+    else
+      throw TextusException(s"launcher config file not found: ${path}")
 
   def fromParsed(values: Map[String, Vector[String]]): LauncherConfig = {
     def _first_(keys: String*): Option[String] =
@@ -106,9 +121,9 @@ object LauncherConfig {
     LauncherConfig(
       runtimeVersion = _first_("runtime.version", "textus.runtime.version", "version"),
       runtimeCatalogUrl = _first_("runtime.catalog.url", "textus.runtime.catalog.url", "catalog.url"),
-      runtimeSelectionPolicy = _first_("runtime.cncf.selectionPolicy", "textus.runtime.cncf.selectionPolicy").
+      runtimeSelectionPolicy = _first_("runtime.cncf.selection-policy", "runtime.cncf.selection_policy", "runtime.cncf.selectionPolicy", "textus.runtime.cncf.selection-policy", "textus.runtime.cncf.selection_policy", "textus.runtime.cncf.selectionPolicy").
         map(RuntimeSelectionPolicy.parse),
-      runtimeNoCompatiblePolicy = _first_("runtime.cncf.noCompatiblePolicy", "textus.runtime.cncf.noCompatiblePolicy").
+      runtimeNoCompatiblePolicy = _first_("runtime.cncf.no-compatible-policy", "runtime.cncf.no_compatible_policy", "runtime.cncf.noCompatiblePolicy", "textus.runtime.cncf.no-compatible-policy", "textus.runtime.cncf.no_compatible_policy", "textus.runtime.cncf.noCompatiblePolicy").
         map(RuntimeNoCompatiblePolicy.parse),
       carRepositories = _all_("repositories.car", "componentRepositories.car", "textus.repository.car", "textus.component.repository.car"),
       sarRepositories = _all_("repositories.sar", "componentRepositories.sar", "textus.repository.sar", "textus.subsystem.repository.sar"),
@@ -168,17 +183,52 @@ object LauncherConfig {
     (config.carRepositories ++ config.sarRepositories).exists(_.contains("/.cncf/local/repository/"))
 }
 
-object SimpleYaml {
-  def parse(text: String): Map[String, Vector[String]] = {
+object LauncherConfigParser {
+  def parse(
+    path: Path,
+    text: String
+  ): Map[String, Vector[String]] =
+    _file_type(path) match {
+      case "yaml" | "yml" => _parse_light_yaml(text)
+      case "properties" | "props" | "conf" => _parse_properties(text)
+      case other =>
+        throw TextusException(s"unsupported launcher config file type: .$other; use yaml, yml, properties, props, or conf")
+    }
+
+  private def _file_type(path: Path): String = {
+    val name = path.getFileName.toString
+    val i = name.lastIndexOf('.')
+    if (i >= 0 && i + 1 < name.length)
+      name.substring(i + 1).toLowerCase
+    else
+      "yaml"
+  }
+
+  private def _parse_properties(text: String): Map[String, Vector[String]] = {
+    var values = Map.empty[String, Vector[String]]
+    text.linesIterator.foreach { raw =>
+      val uncommented = _strip_comment(raw)
+      val trimmed = uncommented.trim
+      if (trimmed.nonEmpty) {
+        val idx = _key_value_index(trimmed)
+        if (idx >= 0) {
+          val key = trimmed.substring(0, idx).trim
+          val value = trimmed.substring(idx + 1).trim
+          _put_value(key, value, values).foreach(v => values = v)
+        }
+      }
+    }
+    values
+  }
+
+  private def _parse_light_yaml(text: String): Map[String, Vector[String]] = {
     val builder = Map.newBuilder[String, Vector[String]]
     var values = Map.empty[String, Vector[String]]
     var stack = Vector.empty[(Int, String)]
     var pendingkey: Option[String] = None
 
     def _put_(path: String, value: String): Unit = {
-      val clean = _unquote(value.trim)
-      if (clean.nonEmpty)
-        values = values.updated(path, values.getOrElse(path, Vector.empty) :+ clean)
+      _put_value(path, value, values).foreach(v => values = v)
     }
 
     text.linesIterator.foreach { raw =>
@@ -190,7 +240,7 @@ object SimpleYaml {
         if (trimmed.startsWith("- ")) {
           pendingkey.foreach(k => _put_(k, trimmed.drop(2)))
         } else {
-          val idx = trimmed.indexOf(':')
+          val idx = _key_value_index(trimmed)
           if (idx >= 0) {
             val key = trimmed.substring(0, idx).trim
             val value = trimmed.substring(idx + 1).trim
@@ -210,9 +260,33 @@ object SimpleYaml {
     builder.result()
   }
 
+  private def _put_value(
+    path: String,
+    value: String,
+    values: Map[String, Vector[String]]
+  ): Option[Map[String, Vector[String]]] = {
+    val key = path.trim
+    val clean = _unquote(value.trim)
+    if (key.nonEmpty && clean.nonEmpty)
+      Some(values.updated(key, values.getOrElse(key, Vector.empty) :+ clean))
+    else
+      None
+  }
+
   private def _strip_comment(s: String): String = {
     val idx = s.indexOf('#')
     if (idx < 0) s else s.substring(0, idx)
+  }
+
+  private def _key_value_index(s: String): Int = {
+    val colon = s.indexOf(':')
+    val equals = s.indexOf('=')
+    (colon, equals) match {
+      case (-1, -1) => -1
+      case (-1, x) => x
+      case (x, -1) => x
+      case (x, y) => math.min(x, y)
+    }
   }
 
   private def _unquote(s: String): String =
@@ -220,4 +294,9 @@ object SimpleYaml {
       s.substring(1, s.length - 1)
     else
       s
+}
+
+object SimpleYaml {
+  def parse(text: String): Map[String, Vector[String]] =
+    LauncherConfigParser.parse(Path.of("config.yaml"), text)
 }
