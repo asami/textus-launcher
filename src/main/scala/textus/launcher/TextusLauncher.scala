@@ -4,7 +4,8 @@ import java.nio.file.Files
 
 /*
  * @since   May. 17, 2026
- * @version May. 27, 2026
+ *  version May. 27, 2026
+ * @version Jun. 10, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
@@ -38,8 +39,7 @@ final class TextusLauncher(
     val catalogstore = RuntimeCatalogStore(paths)
     command match {
       case TextusCommand.Runtime.Current =>
-        println(runtimeresolver.resolveVersion(store.current(None, config), config, paths))
-        0
+        _run_runtime_current(store, catalogstore, config)
       case TextusCommand.Runtime.LocalList =>
         val installed =
           if (Files.isDirectory(paths.runtimeRoot)) {
@@ -102,6 +102,44 @@ final class TextusLauncher(
         0
     }
   }
+
+  private def _run_runtime_current(
+    store: RuntimeVersionStore,
+    catalogstore: RuntimeCatalogStore,
+    config: LauncherConfig
+  ): Int = {
+    val selector = store.current(None, config)
+    val current = runtimeresolver.resolveVersion(selector, config, paths)
+    println(current)
+    _warn_if_runtime_catalog_is_stale(selector, current, catalogstore, config)
+    0
+  }
+
+  private def _warn_if_runtime_catalog_is_stale(
+    selector: String,
+    current: String,
+    catalogstore: RuntimeCatalogStore,
+    config: LauncherConfig
+  ): Unit =
+    if (_is_dynamic_runtime_selector(selector) && !_is_dynamic_runtime_selector(current)) {
+      val remoteversion =
+        try Some(catalogstore.fetch(config).resolve(selector).version)
+        catch {
+          case _: Throwable => None
+        }
+      remoteversion.filter(_ != current).foreach { version =>
+        Console.err.println(
+          s"warning: cached Textus runtime catalog resolves $selector to $current, but remote catalog resolves it to $version."
+        )
+        Console.err.println("Run 'textus runtime refresh' to update the local runtime catalog cache.")
+      }
+    }
+
+  private def _is_dynamic_runtime_selector(selector: String): Boolean =
+    selector match {
+      case "recommended" | "latest" | "latest-stable" | "latest.release" | "latest-snapshot" | "newest" => true
+      case _ => false
+    }
 
   private def _resolve_runtime_use_target(
     target: TextusCommand.RuntimeUseTarget

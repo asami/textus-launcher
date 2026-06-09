@@ -7,7 +7,8 @@ import scala.util.Using
 
 /*
  * @since   May. 17, 2026
- * @version May. 21, 2026
+ *  version May. 21, 2026
+ * @version Jun. 10, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class RuntimeCatalog(
@@ -227,12 +228,14 @@ final class RuntimeCatalogStore(paths: LauncherPaths) {
       None
 
   def refresh(config: LauncherConfig): RuntimeCatalog = {
-    val url = config.runtimeCatalogUrl.getOrElse(LauncherConfig.DEFAULT_RUNTIME_CATALOG_URL)
-    val text = _read_url_or_file(url)
+    val text = _read_runtime_catalog_text(config)
     Files.createDirectories(paths.runtimeCatalog.getParent)
     Files.writeString(paths.runtimeCatalog, text, StandardCharsets.UTF_8)
     RuntimeCatalog.parse(text)
   }
+
+  def fetch(config: LauncherConfig): RuntimeCatalog =
+    RuntimeCatalog.parse(_read_runtime_catalog_text(config))
 
   def loadOrRefresh(config: LauncherConfig): Option[RuntimeCatalog] =
     _load_cached_safe().orElse {
@@ -247,6 +250,11 @@ final class RuntimeCatalogStore(paths: LauncherPaths) {
     catch {
       case _: Throwable => None
     }
+
+  private def _read_runtime_catalog_text(config: LauncherConfig): String = {
+    val url = config.runtimeCatalogUrl.getOrElse(LauncherConfig.DEFAULT_RUNTIME_CATALOG_URL)
+    _read_url_or_file(url)
+  }
 
   private def _read_url_or_file(value: String): String =
     if (value.startsWith("http://") || value.startsWith("https://")) {

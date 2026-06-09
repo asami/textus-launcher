@@ -4,7 +4,8 @@ import java.nio.file.{Files, Path}
 
 /*
  * @since   May. 17, 2026
- * @version May. 27, 2026
+ *  version May. 27, 2026
+ * @version Jun. 10, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -20,6 +21,7 @@ object TextusLauncherSpec {
     spec.runtimeUseAutoSelectsProjectWhenTextusDirectoryExists()
     spec.runtimeCatalogParseAndSelectorResolution()
     spec.runtimeCatalogCommands()
+    spec.runtimeCurrentWarnsWhenCachedRecommendedIsStale()
     spec.executionRewritesToCncfArgs()
     spec.localRepositoryResolvesArtifactWithoutConfig()
     spec.snapshotArtifactDoesNotFallThroughToCacheOrPublic()
@@ -238,6 +240,28 @@ final class TextusLauncherSpec {
     launcher.run(Vector("runtime", "use", "recommended", "--project"))
     _assert_equals(Files.readString(paths.projectVersion).trim, "recommended")
     launcher.run(Vector("runtime", "current"))
+  }
+
+  def runtimeCurrentWarnsWhenCachedRecommendedIsStale(): Unit = _with_temp_paths { paths =>
+    val remotecatalog = paths.cwd.resolve("runtime-catalog.yaml")
+    _write(paths.runtimeCatalog, _catalog_text)
+    _write(remotecatalog, _catalog_text.replace("recommended: 0.2.0", "recommended: 0.3.0-SNAPSHOT"))
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
+      s"""runtime:
+         |  catalog:
+         |    url: $remotecatalog
+         |""".stripMargin)
+    val launcher = new TextusLauncher(paths, CoursierCncfRuntimeResolver("false"), FakeInvoker())
+
+    val (code, stdout, stderr) = _capture_stdout_stderr {
+      launcher.run(Vector("runtime", "current"))
+    }
+
+    _assert_equals(code, 0)
+    _assert_equals(stdout.trim, "0.2.0")
+    assert(stderr.contains("cached Textus runtime catalog resolves recommended to 0.2.0"))
+    assert(stderr.contains("remote catalog resolves it to 0.3.0-SNAPSHOT"))
+    assert(stderr.contains("textus runtime refresh"))
   }
 
   def executionRewritesToCncfArgs(): Unit = _with_temp_paths { paths =>
@@ -576,6 +600,11 @@ final class TextusLauncherSpec {
   }
 
   def latestRuntimeIsConcrete(): Unit = _with_temp_paths { paths =>
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
+      s"""runtime:
+         |  catalog:
+         |    url: ${paths.cwd.resolve("missing-runtime-catalog.yaml")}
+         |""".stripMargin)
     val resolver = FakeResolver()
     val launcher = new TextusLauncher(paths, resolver, FakeInvoker())
     launcher.run(Vector("runtime", "current"))
@@ -594,6 +623,17 @@ final class TextusLauncherSpec {
       f
     }
     (code, out.toString)
+  }
+
+  private def _capture_stdout_stderr(f: => Int): (Int, String, String) = {
+    val out = new java.io.ByteArrayOutputStream()
+    val err = new java.io.ByteArrayOutputStream()
+    val code = Console.withOut(new java.io.PrintStream(out)) {
+      Console.withErr(new java.io.PrintStream(err)) {
+        f
+      }
+    }
+    (code, out.toString, err.toString)
   }
 
   private def _with_temp_paths(f: LauncherPaths => Unit): Unit = {
