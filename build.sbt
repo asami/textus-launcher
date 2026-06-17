@@ -10,7 +10,7 @@ cozyCoursierChannelPath := "repository/textus/coursier-channel.json"
 cozyCoursierChannelEntries := Seq(CozyCoursierChannelEntry(
   name = "textus",
   repositories = Seq("central", "https://www.simplemodeling.org/repository/maven"),
-  dependencies = Seq(s"org.goldenport:textus_3:${version.value}"),
+  dependencies = Seq(s"org.goldenport:textus-launcher_3:${version.value}"),
   mainClass = "textus.launcher.TextusMain"
 ))
 
@@ -30,12 +30,12 @@ def launcherBuildInfoSource(target: File, packageName: String, launcherName: Str
 lazy val root = (project in file("."))
   .enablePlugins(org.goldenport.cozy.CozyPlugin)
   .settings(
-    name := "textus",
+    name := "textus-launcher",
     Compile / sourceGenerators += Def.task {
       Seq(launcherBuildInfoSource(
         (Compile / sourceManaged).value / "launcher-build-info",
         "textus.launcher",
-        name.value,
+        "textus",
         version.value
       ))
     }.taskValue,

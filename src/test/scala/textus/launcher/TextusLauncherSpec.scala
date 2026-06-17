@@ -5,7 +5,7 @@ import java.nio.file.{Files, Path}
 /*
  * @since   May. 17, 2026
  *  version May. 27, 2026
- * @version Jun. 10, 2026
+ * @version Jun. 18, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -117,7 +117,7 @@ final class TextusLauncherSpec {
       launcher.run(Vector("--version"))
     }
     _assert_equals(code, 0)
-    _assert_equals(output.trim, s"${LauncherBuildInfo.name} ${LauncherBuildInfo.version}")
+    _assert_equals(output.trim, s"textus ${LauncherBuildInfo.version}")
     _assert_equals(TextusCommandParser.parse(Vector("version")), TextusCommand.Version)
     _assert_equals(TextusCommandParser.parse(Vector("launcher", "version")), TextusCommand.Version)
   }
