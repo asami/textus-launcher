@@ -5,7 +5,7 @@ import java.nio.file.{Files, Path}
 /*
  * @since   May. 17, 2026
  *  version May. 27, 2026
- * @version Jun. 18, 2026
+ * @version Jun. 20, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -13,6 +13,7 @@ object TextusLauncherSpec {
     val spec = new TextusLauncherSpec
     spec.parser()
     spec.helpExplainsLocalRepository()
+    spec.runtimeVersion()
     spec.launcherVersion()
     spec.configMerge()
     spec.launcherConfigSupportsPropertiesAndConfFiles()
@@ -111,15 +112,27 @@ final class TextusLauncherSpec {
     assert(help.contains("yaml/yml, properties/props, and lightweight conf"))
   }
 
+  def runtimeVersion(): Unit = _with_temp_paths { paths =>
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"), "runtime:\n  version: 0.1.0\n")
+    val launcher = new TextusLauncher(paths, FakeResolver(), FakeInvoker())
+    val (code, output) = _capture_stdout {
+      launcher.run(Vector("version"))
+    }
+    _assert_equals(code, 0)
+    _assert_equals(output.trim, "0.1.0")
+    _assert_equals(TextusCommandParser.parse(Vector("version")), TextusCommand.Runtime.Current)
+    _assert_equals(TextusCommandParser.parse(Vector("--version")), TextusCommand.Runtime.Current)
+  }
+
   def launcherVersion(): Unit = _with_temp_paths { paths =>
     val launcher = new TextusLauncher(paths, FakeResolver(), FakeInvoker())
     val (code, output) = _capture_stdout {
-      launcher.run(Vector("--version"))
+      launcher.run(Vector("launcher", "version"))
     }
     _assert_equals(code, 0)
     _assert_equals(output.trim, s"textus ${LauncherBuildInfo.version}")
-    _assert_equals(TextusCommandParser.parse(Vector("version")), TextusCommand.Version)
-    _assert_equals(TextusCommandParser.parse(Vector("launcher", "version")), TextusCommand.Version)
+    _assert_equals(TextusCommandParser.parse(Vector("launcher", "version")), TextusCommand.LauncherVersion)
+    _assert_equals(TextusCommandParser.parse(Vector("launcher", "--version")), TextusCommand.LauncherVersion)
   }
 
   def configMerge(): Unit = _with_temp_paths { paths =>

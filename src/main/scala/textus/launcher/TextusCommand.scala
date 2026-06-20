@@ -2,7 +2,8 @@ package textus.launcher
 
 /*
  * @since   May. 17, 2026
- * @version May. 27, 2026
+ *  version May. 27, 2026
+ * @version Jun. 20, 2026
  * @author  ASAMI, Tomoharu
  */
 enum ArtifactKind {
@@ -49,14 +50,16 @@ object TextusCommand {
     case Auto, Global, Project
   }
 
-  case object Version extends TextusCommand
+  case object LauncherVersion extends TextusCommand
   case object Help extends TextusCommand
 }
 
 object TextusCommandParser {
   def parse(args: Vector[String]): TextusCommand = {
-    if (args == Vector("--version") || args == Vector("version") || args == Vector("launcher", "version")) {
-      TextusCommand.Version
+    if (args == Vector("--version") || args == Vector("version")) {
+      TextusCommand.Runtime.Current
+    } else if (args == Vector("launcher", "version") || args == Vector("launcher", "--version")) {
+      TextusCommand.LauncherVersion
     } else if (args.isEmpty || args.contains("--help") || args.contains("-h")) {
       TextusCommand.Help
     } else {
