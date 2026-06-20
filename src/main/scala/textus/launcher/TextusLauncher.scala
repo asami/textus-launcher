@@ -21,7 +21,13 @@ final class TextusLauncher(
       case TextusCommand.LauncherVersion =>
         println(s"${LauncherBuildInfo.name} ${LauncherBuildInfo.version}")
         0
-      case TextusCommand.Help =>
+      case TextusCommand.RuntimeHelp =>
+        val code = _run_runtime_help(config)
+        println()
+        println("Launcher help:")
+        println(TextusCommandParser.helpText)
+        code
+      case TextusCommand.LauncherHelp =>
         println(TextusCommandParser.helpText)
         0
       case runtime: TextusCommand.Runtime =>
@@ -29,6 +35,13 @@ final class TextusLauncher(
       case execute: TextusCommand.Execute =>
         _run_execute(execute, config)
     }
+  }
+
+  private def _run_runtime_help(config: LauncherConfig): Int = {
+    val store = RuntimeVersionStore(paths)
+    val runtimeversion = store.current(None, config)
+    val classpath = runtimeresolver.resolve(runtimeversion, config, paths)
+    cncfinvoker.invoke(classpath, Vector("--help"))
   }
 
   private def _run_runtime(

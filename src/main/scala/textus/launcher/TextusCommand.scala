@@ -51,7 +51,8 @@ object TextusCommand {
   }
 
   case object LauncherVersion extends TextusCommand
-  case object Help extends TextusCommand
+  case object RuntimeHelp extends TextusCommand
+  case object LauncherHelp extends TextusCommand
 }
 
 object TextusCommandParser {
@@ -60,8 +61,10 @@ object TextusCommandParser {
       TextusCommand.Runtime.Current
     } else if (args == Vector("launcher", "version") || args == Vector("launcher", "--version")) {
       TextusCommand.LauncherVersion
-    } else if (args.isEmpty || args.contains("--help") || args.contains("-h")) {
-      TextusCommand.Help
+    } else if (args == Vector("help") || args == Vector("--help") || args == Vector("-h")) {
+      TextusCommand.RuntimeHelp
+    } else if (args.isEmpty || args == Vector("launcher", "help") || args == Vector("launcher", "--help")) {
+      TextusCommand.LauncherHelp
     } else {
       val (runtimeversion, selectionpolicy, nocompatiblepolicy, rest) = _take_global_runtime(args)
       rest.headOption match {
@@ -72,7 +75,7 @@ object TextusCommandParser {
         case Some(other) =>
           throw TextusException(s"unknown textus command: $other")
         case None =>
-          TextusCommand.Help
+          TextusCommand.LauncherHelp
       }
     }
   }

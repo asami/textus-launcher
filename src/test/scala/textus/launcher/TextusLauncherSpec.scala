@@ -1,5 +1,8 @@
 package textus.launcher
 
+import org.scalatest.GivenWhenThen
+import org.scalatest.matchers.should.Matchers
+import org.scalatest.wordspec.AnyWordSpec
 import java.nio.file.{Files, Path}
 
 /*
@@ -15,6 +18,7 @@ object TextusLauncherSpec {
     spec.helpExplainsLocalRepository()
     spec.runtimeVersion()
     spec.launcherVersion()
+    spec.runtimeHelp()
     spec.configMerge()
     spec.launcherConfigSupportsPropertiesAndConfFiles()
     spec.runtimeVersionPrecedence()
@@ -42,7 +46,224 @@ object TextusLauncherSpec {
   }
 }
 
-final class TextusLauncherSpec {
+final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenThen {
+  "textus launcher" should {
+    "command parsing" which {
+      "parser" in {
+        Given("the textus launcher scenario: parser")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        parser()
+      }
+
+      "runtime catalog parse and selector resolution" in {
+        Given("the textus launcher scenario: runtime catalog parse and selector resolution")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        runtimeCatalogParseAndSelectorResolution()
+      }
+
+    }
+
+    "configuration and launcher metadata" which {
+      "launcher version" in {
+        Given("the textus launcher scenario: launcher version")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        launcherVersion()
+      }
+
+      "config merge" in {
+        Given("the textus launcher scenario: config merge")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        configMerge()
+      }
+
+      "launcher config supports properties and conf files" in {
+        Given("the textus launcher scenario: launcher config supports properties and conf files")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        launcherConfigSupportsPropertiesAndConfFiles()
+      }
+
+      "local repository resolves artifact without config" in {
+        Given("the textus launcher scenario: local repository resolves artifact without config")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        localRepositoryResolvesArtifactWithoutConfig()
+      }
+
+    }
+
+    "runtime selection and catalog operations" which {
+      "runtime version" in {
+        Given("the textus launcher scenario: runtime version")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        runtimeVersion()
+      }
+
+      "runtime help" in {
+        Given("the textus launcher scenario: runtime help")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        runtimeHelp()
+      }
+
+      "runtime version precedence" in {
+        Given("the textus launcher scenario: runtime version precedence")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        runtimeVersionPrecedence()
+      }
+
+      "runtime use writes expected files" in {
+        Given("the textus launcher scenario: runtime use writes expected files")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        runtimeUseWritesExpectedFiles()
+      }
+
+      "runtime use auto selects project when textus directory exists" in {
+        Given("the textus launcher scenario: runtime use auto selects project when textus directory exists")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        runtimeUseAutoSelectsProjectWhenTextusDirectoryExists()
+      }
+
+      "runtime catalog commands" in {
+        Given("the textus launcher scenario: runtime catalog commands")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        runtimeCatalogCommands()
+      }
+
+      "runtime current warns when cached recommended is stale" in {
+        Given("the textus launcher scenario: runtime current warns when cached recommended is stale")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        runtimeCurrentWarnsWhenCachedRecommendedIsStale()
+      }
+
+      "runtime conflict defaults to error" in {
+        Given("the textus launcher scenario: runtime conflict defaults to error")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        runtimeConflictDefaultsToError()
+      }
+
+      "runtime conflict can use newest policy" in {
+        Given("the textus launcher scenario: runtime conflict can use newest policy")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        runtimeConflictCanUseNewestPolicy()
+      }
+
+      "runtime command does not load cncf" in {
+        Given("the textus launcher scenario: runtime command does not load cncf")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        runtimeCommandDoesNotLoadCncf()
+      }
+
+      "latest runtime is concrete" in {
+        Given("the textus launcher scenario: latest runtime is concrete")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        latestRuntimeIsConcrete()
+      }
+
+    }
+
+    "artifact execution and resolution" which {
+      "execution rewrites to cncf args" in {
+        Given("the textus launcher scenario: execution rewrites to cncf args")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        executionRewritesToCncfArgs()
+      }
+
+      "snapshot artifact does not fall through to cache or public" in {
+        Given("the textus launcher scenario: snapshot artifact does not fall through to cache or public")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        snapshotArtifactDoesNotFallThroughToCacheOrPublic()
+      }
+
+      "artifact catalog uses current compatible runtime by default" in {
+        Given("the textus launcher scenario: artifact catalog uses current compatible runtime by default")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        artifactCatalogUsesCurrentCompatibleRuntimeByDefault()
+      }
+
+      "artifact catalog can select latest tested runtime" in {
+        Given("the textus launcher scenario: artifact catalog can select latest tested runtime")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        artifactCatalogCanSelectLatestTestedRuntime()
+      }
+
+      "artifact catalog can select latest compatible runtime" in {
+        Given("the textus launcher scenario: artifact catalog can select latest compatible runtime")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        artifactCatalogCanSelectLatestCompatibleRuntime()
+      }
+
+      "artifact catalog can select newest compatible runtime" in {
+        Given("the textus launcher scenario: artifact catalog can select newest compatible runtime")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        artifactCatalogCanSelectNewestCompatibleRuntime()
+      }
+
+      "artifact catalog includes dependency requirements" in {
+        Given("the textus launcher scenario: artifact catalog includes dependency requirements")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        artifactCatalogIncludesDependencyRequirements()
+      }
+
+      "artifact catalog does not fallback to metadata when catalog rejects version" in {
+        Given("the textus launcher scenario: artifact catalog does not fallback to metadata when catalog rejects version")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        artifactCatalogDoesNotFallbackToMetadataWhenCatalogRejectsVersion()
+      }
+
+      "explicit runtime is validated against artifact requirement" in {
+        Given("the textus launcher scenario: explicit runtime is validated against artifact requirement")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        explicitRuntimeIsValidatedAgainstArtifactRequirement()
+      }
+
+    }
+
+    "packaging boundaries" which {
+      "no runtime library dependencies" in {
+        Given("the textus launcher scenario: no runtime library dependencies")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        noRuntimeLibraryDependencies()
+      }
+
+    }
+
+    "launcher behavior" which {
+      "help explains local repository" in {
+        Given("the textus launcher scenario: help explains local repository")
+        When("the launcher behavior is exercised")
+        Then("the executable specification holds through scenario-specific expectations")
+        helpExplainsLocalRepository()
+      }
+
+    }
+
+  }
+
   def parser(): Unit = {
     val command = TextusCommandParser.parse(Vector("command", "textus-blog:0.1.0", "blog.post.search", "limit=10"))
       .asInstanceOf[TextusCommand.Execute]
@@ -86,7 +307,7 @@ final class TextusLauncherSpec {
       } catch {
         case e: TextusException => e.getMessage.contains("both")
       }
-    assert(mixed)
+    mixed shouldBe true
 
     val forced = TextusCommandParser.parse(Vector("server", "--sar", "my-app"))
       .asInstanceOf[TextusCommand.Execute]
@@ -105,11 +326,11 @@ final class TextusLauncherSpec {
 
   def helpExplainsLocalRepository(): Unit = {
     val help = TextusCommandParser.helpText
-    assert(help.contains("~/.cncf/local/repository/car"))
-    assert(help.contains("cozyPublishLocalCar"))
-    assert(help.contains("~/.cncf/local is developer local publish state"))
-    assert(help.contains("Snapshot components are local-only"))
-    assert(help.contains("yaml/yml, properties/props, and lightweight conf"))
+    help.contains("~/.cncf/local/repository/car") shouldBe true
+    help.contains("cozyPublishLocalCar") shouldBe true
+    help.contains("~/.cncf/local is developer local publish state") shouldBe true
+    help.contains("Snapshot components are local-only") shouldBe true
+    help.contains("yaml/yml, properties/props, and lightweight conf") shouldBe true
   }
 
   def runtimeVersion(): Unit = _with_temp_paths { paths =>
@@ -135,6 +356,21 @@ final class TextusLauncherSpec {
     _assert_equals(TextusCommandParser.parse(Vector("launcher", "--version")), TextusCommand.LauncherVersion)
   }
 
+  def runtimeHelp(): Unit = _with_temp_paths { paths =>
+    val invoker = FakeInvoker()
+    val launcher = new TextusLauncher(paths, FakeResolver(), invoker)
+    val (code, output) = _capture_stdout {
+      launcher.run(Vector("help"))
+    }
+    _assert_equals(code, 0)
+    _assert_equals(invoker.lastArgs, Vector("--help"))
+    output.contains("Launcher help:") shouldBe true
+    output.contains("textus launcher version") shouldBe true
+    _assert_equals(TextusCommandParser.parse(Vector("help")), TextusCommand.RuntimeHelp)
+    _assert_equals(TextusCommandParser.parse(Vector("--help")), TextusCommand.RuntimeHelp)
+    _assert_equals(TextusCommandParser.parse(Vector("launcher", "help")), TextusCommand.LauncherHelp)
+  }
+
   def configMerge(): Unit = _with_temp_paths { paths =>
     _write(paths.textusHome.resolve("config.yaml"),
       """runtime:
@@ -157,14 +393,14 @@ final class TextusLauncherSpec {
     val config = LauncherConfig.load(paths)
     _assert_equals(config.runtimeVersion, Some("0.2.0"))
     _assert_equals(config.runtimeCatalogUrl, Some("https://global.example/catalog.yaml"))
-    assert(config.carRepositories.head == "https://project.example/car")
-    assert(config.carRepositories(1) == "https://global.example/car")
-    assert(config.sarRepositories.head == "https://global.example/sar")
-    assert(config.carRepositories.contains(paths.localCarRepository.toString))
-    assert(config.sarRepositories.contains(paths.localSarRepository.toString))
-    assert(config.carRepositories.contains(paths.cacheCarRepository.toString))
-    assert(config.sarRepositories.contains(paths.cacheSarRepository.toString))
-    assert(config.carRepositories.contains("https://www.simplemodeling.org/repository/car"))
+    config.carRepositories.head == "https://project.example/car" shouldBe true
+    config.carRepositories(1) == "https://global.example/car" shouldBe true
+    config.sarRepositories.head == "https://global.example/sar" shouldBe true
+    config.carRepositories.contains(paths.localCarRepository.toString) shouldBe true
+    config.sarRepositories.contains(paths.localSarRepository.toString) shouldBe true
+    config.carRepositories.contains(paths.cacheCarRepository.toString) shouldBe true
+    config.sarRepositories.contains(paths.cacheSarRepository.toString) shouldBe true
+    config.carRepositories.contains("https://www.simplemodeling.org/repository/car") shouldBe true
   }
 
   def launcherConfigSupportsPropertiesAndConfFiles(): Unit = _with_temp_paths { paths =>
@@ -181,8 +417,8 @@ final class TextusLauncherSpec {
     _assert_equals(config.runtimeVersion, Some("0.2.0"))
     _assert_equals(config.runtimeSelectionPolicy, Some(RuntimeSelectionPolicy.LatestCompatible))
     _assert_equals(config.runtimeNoCompatiblePolicy, Some(RuntimeNoCompatiblePolicy.Newest))
-    assert(config.carRepositories.head == "https://properties.example/car")
-    assert(config.mavenRepositories.head == "https://conf.example/maven")
+    config.carRepositories.head == "https://properties.example/car" shouldBe true
+    config.mavenRepositories.head == "https://conf.example/maven" shouldBe true
 
     val resolver = FakeResolver()
     val launcher = new TextusLauncher(paths, resolver, FakeInvoker())
@@ -216,7 +452,7 @@ final class TextusLauncherSpec {
     val launcher = new TextusLauncher(paths, FakeResolver(), FakeInvoker())
     launcher.run(Vector("runtime", "use", "latest"))
     _assert_equals(Files.readString(paths.projectVersion).trim, "latest")
-    assert(!Files.isRegularFile(paths.globalVersion))
+    Files.isRegularFile(paths.globalVersion) shouldBe false
   }
 
   def runtimeCatalogParseAndSelectorResolution(): Unit = {
@@ -233,7 +469,7 @@ final class TextusLauncherSpec {
       } catch {
         case e: TextusException => e.getMessage.contains("disabled")
       }
-    assert(disabled)
+    disabled shouldBe true
   }
 
   def runtimeCatalogCommands(): Unit = _with_temp_paths { paths =>
@@ -246,7 +482,7 @@ final class TextusLauncherSpec {
          |""".stripMargin)
     val launcher = new TextusLauncher(paths, CoursierCncfRuntimeResolver("false"), FakeInvoker())
     launcher.run(Vector("runtime", "refresh"))
-    assert(Files.isRegularFile(paths.runtimeCatalog))
+    Files.isRegularFile(paths.runtimeCatalog) shouldBe true
     launcher.run(Vector("runtime", "remote", "list"))
     launcher.run(Vector("runtime", "catalog", "show"))
     launcher.run(Vector("runtime", "channels"))
@@ -272,9 +508,9 @@ final class TextusLauncherSpec {
 
     _assert_equals(code, 0)
     _assert_equals(stdout.trim, "0.2.0")
-    assert(stderr.contains("cached Textus runtime catalog resolves recommended to 0.2.0"))
-    assert(stderr.contains("remote catalog resolves it to 0.3.0-SNAPSHOT"))
-    assert(stderr.contains("textus runtime refresh"))
+    stderr.contains("cached Textus runtime catalog resolves recommended to 0.2.0") shouldBe true
+    stderr.contains("remote catalog resolves it to 0.3.0-SNAPSHOT") shouldBe true
+    stderr.contains("textus runtime refresh") shouldBe true
   }
 
   def executionRewritesToCncfArgs(): Unit = _with_temp_paths { paths =>
@@ -356,9 +592,9 @@ final class TextusLauncherSpec {
     val code = launcher.run(Vector("server", "textus-local"))
 
     _assert_equals(code, 0)
-    assert(invoker.lastArgs.contains(s"--repository-dir=${paths.localCarRepository}"))
-    assert(invoker.lastArgs.contains("--textus.component=textus-local"))
-    assert(invoker.lastArgs.contains("--textus.component.version=0.1.0"))
+    invoker.lastArgs.contains(s"--repository-dir=${paths.localCarRepository}") shouldBe true
+    invoker.lastArgs.contains("--textus.component=textus-local") shouldBe true
+    invoker.lastArgs.contains("--textus.component.version=0.1.0") shouldBe true
   }
 
   def snapshotArtifactDoesNotFallThroughToCacheOrPublic(): Unit = _with_temp_paths { paths =>
@@ -374,8 +610,8 @@ final class TextusLauncherSpec {
           e.getMessage.contains("snapshot component not found locally") &&
             e.getMessage.contains("cozyPublishLocalCar")
       }
-    assert(failed)
-    assert(invoker.lastArgs.isEmpty)
+    failed shouldBe true
+    invoker.lastArgs.isEmpty shouldBe true
   }
 
   def artifactCatalogUsesCurrentCompatibleRuntimeByDefault(): Unit = _with_temp_paths { paths =>
@@ -526,7 +762,7 @@ final class TextusLauncherSpec {
       } catch {
         case e: TextusException => e.getMessage.contains("artifact catalog does not contain an enabled version")
       }
-    assert(failed)
+    failed shouldBe true
   }
 
 
@@ -552,7 +788,7 @@ final class TextusLauncherSpec {
       } catch {
         case e: TextusException => e.getMessage.contains("no compatible CNCF runtime version")
       }
-    assert(failed)
+    failed shouldBe true
   }
 
   def runtimeConflictCanUseNewestPolicy(): Unit = _with_temp_paths { paths =>
@@ -599,7 +835,7 @@ final class TextusLauncherSpec {
       } catch {
         case e: TextusException => e.getMessage.contains("not compatible") || e.getMessage.contains("disabled")
       }
-    assert(failed)
+    failed shouldBe true
   }
 
   def runtimeCommandDoesNotLoadCncf(): Unit = _with_temp_paths { paths =>
@@ -625,9 +861,11 @@ final class TextusLauncherSpec {
   }
 
   def noRuntimeLibraryDependencies(): Unit = {
-    val build = Files.readString(Path.of("build.sbt"))
-    assert(!build.contains("libraryDependencies +="))
-    assert(!build.contains("libraryDependencies ++="))
+    val lines = Files.readString(Path.of("build.sbt")).linesIterator.toVector.map(_.trim)
+    def _runtime_library_dependency_(line: String): Boolean =
+      line.startsWith("libraryDependencies +=") && !line.contains("% Test") && !line.contains("% \"test\"")
+    lines.exists(_runtime_library_dependency_) shouldBe false
+    lines.exists(_.startsWith("libraryDependencies ++=")) shouldBe false
   }
 
   private def _capture_stdout(f: => Int): (Int, String) = {
@@ -664,7 +902,7 @@ final class TextusLauncherSpec {
   }
 
   private def _assert_equals[A](actual: A, expected: A): Unit =
-    assert(actual == expected, s"expected=$expected actual=$actual")
+    actual shouldBe expected
 
   private val _catalog_text: String =
     """schemaVersion: 1

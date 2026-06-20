@@ -5,6 +5,8 @@ ThisBuild / version := "0.1.4-SNAPSHOT"
 ThisBuild / scalaVersion := "3.3.7"
 ThisBuild / publishMavenStyle := true
 
+libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.19" % Test
+
 cozyCoursierChannelPath := "repository/textus/coursier-channel.json"
 
 cozyCoursierChannelEntries := Seq(CozyCoursierChannelEntry(
@@ -40,9 +42,6 @@ lazy val root = (project in file("."))
       ))
     }.taskValue,
     Compile / mainClass := Some("textus.launcher.TextusMain"),
-    Test / test := {
-      (Test / runMain).toTask(" textus.launcher.TextusLauncherSpec").value
-    },
     publishTo := {
       val repo = sys.env.get("SIMPLEMODELING_MAVEN_LOCAL")
         .map(file)
