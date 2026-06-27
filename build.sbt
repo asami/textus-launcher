@@ -5,7 +5,10 @@ ThisBuild / version := "0.1.4-SNAPSHOT"
 ThisBuild / scalaVersion := "3.3.7"
 ThisBuild / publishMavenStyle := true
 
-libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.19" % Test
+libraryDependencies ++= Seq(
+  "org.goldenport" %% "goldenport-launcher-core" % "0.1.0-SNAPSHOT",
+  "org.scalatest" %% "scalatest" % "3.2.19" % Test
+)
 
 cozyCoursierChannelPath := "repository/textus/coursier-channel.json"
 

@@ -15,6 +15,7 @@ The launcher resolves a selected CNCF runtime and invokes
 configuration is read from:
 
 - `~/.textus/config.yaml`
+- ancestor `.textus/config.yaml` files, outermost first
 - `$PWD/.textus/config.yaml`
 
 Runtime cache and resolved classpath metadata are kept under `~/.cncf`.
@@ -31,12 +32,13 @@ deployment timing.
 
 ## Configuration
 
-`textus` reads two standard launcher configuration files:
+`textus` reads standard launcher configuration files:
 
 1. `~/.textus/config.yaml`
-2. `$PWD/.textus/config.yaml`
+2. ancestor `.textus/config.yaml` files, outermost first
+3. `$PWD/.textus/config.yaml`
 
-The current directory file overrides the home file. Use `--config <file>` for
+The current directory file overrides inherited ancestor and home files. Use `--config <file>` for
 an additional Textus launcher config file. Command-line options override both
 standard config files and explicit launcher config files.
 

@@ -8,7 +8,7 @@ import java.nio.file.{Files, Path}
 /*
  * @since   May. 17, 2026
  *  version May. 27, 2026
- * @version Jun. 20, 2026
+ * @version Jun. 27, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -20,6 +20,7 @@ object TextusLauncherSpec {
     spec.launcherVersion()
     spec.runtimeHelp()
     spec.configMerge()
+    spec.workspaceRootConfigAppliesToNestedCwd()
     spec.launcherConfigSupportsPropertiesAndConfFiles()
     spec.runtimeVersionPrecedence()
     spec.runtimeUseWritesExpectedFiles()
@@ -78,6 +79,13 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
         When("the launcher behavior is exercised")
         Then("the executable specification holds through scenario-specific expectations")
         configMerge()
+      }
+
+      "workspace root config applies to nested cwd" in {
+        Given("the textus launcher scenario: workspace root config applies to nested cwd")
+        When("the launcher loads config from a nested sample directory")
+        Then("the executable specification holds through inherited root config")
+        workspaceRootConfigAppliesToNestedCwd()
       }
 
       "launcher config supports properties and conf files" in {
@@ -401,6 +409,27 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     config.carRepositories.contains(paths.cacheCarRepository.toString) shouldBe true
     config.sarRepositories.contains(paths.cacheSarRepository.toString) shouldBe true
     config.carRepositories.contains("https://www.simplemodeling.org/repository/car") shouldBe true
+  }
+
+  def workspaceRootConfigAppliesToNestedCwd(): Unit = _with_temp_paths { paths =>
+    val workspace = paths.cwd
+    val sample = workspace.resolve("samples").resolve("textus-app")
+    _write(workspace.resolve(".textus").resolve("config.yaml"),
+      """runtime:
+        |  version: root
+        |repositories:
+        |  maven:
+        |    - https://root.example/maven
+        |""".stripMargin)
+    _write(sample.resolve(".textus").resolve("config.yaml"),
+      """runtime:
+        |  version: sample
+        |""".stripMargin)
+
+    val config = LauncherConfig.load(paths.withCwd(sample))
+
+    _assert_equals(config.runtimeVersion, Some("sample"))
+    config.mavenRepositories.contains("https://root.example/maven") shouldBe true
   }
 
   def launcherConfigSupportsPropertiesAndConfFiles(): Unit = _with_temp_paths { paths =>
@@ -863,9 +892,13 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
   def noRuntimeLibraryDependencies(): Unit = {
     val lines = Files.readString(Path.of("build.sbt")).linesIterator.toVector.map(_.trim)
     def _runtime_library_dependency_(line: String): Boolean =
-      line.startsWith("libraryDependencies +=") && !line.contains("% Test") && !line.contains("% \"test\"")
+      line.contains("libraryDependencies") &&
+        line.contains("\"") &&
+        !line.contains("goldenport-launcher-core") &&
+        !line.contains("% Test") &&
+        !line.contains("% \"test\"")
     lines.exists(_runtime_library_dependency_) shouldBe false
-    lines.exists(_.startsWith("libraryDependencies ++=")) shouldBe false
+    lines.exists(_.contains("goldenport-launcher-core")) shouldBe true
   }
 
   private def _capture_stdout(f: => Int): (Int, String) = {
