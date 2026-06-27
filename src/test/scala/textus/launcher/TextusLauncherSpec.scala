@@ -17,6 +17,7 @@ object TextusLauncherSpec {
     spec.parser()
     spec.helpExplainsLocalRepository()
     spec.runtimeVersion()
+    spec.runtimeDevelopmentConfig()
     spec.launcherVersion()
     spec.runtimeHelp()
     spec.configMerge()
@@ -93,6 +94,13 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
         When("the launcher behavior is exercised")
         Then("the executable specification holds through scenario-specific expectations")
         launcherConfigSupportsPropertiesAndConfFiles()
+      }
+
+      "runtime development config" in {
+        Given("a Textus launcher config declares a development CNCF runtime checkout")
+        When("development mode or environment override is supplied")
+        Then("the runtime development directory is activated through launcher config")
+        runtimeDevelopmentConfig()
       }
 
       "local repository resolves artifact without config" in {
@@ -339,18 +347,81 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     help.contains("~/.cncf/local is developer local publish state") shouldBe true
     help.contains("Snapshot components are local-only") shouldBe true
     help.contains("yaml/yml, properties/props, and lightweight conf") shouldBe true
+    help.contains("--runtime-dev-dir <dir>") shouldBe true
+    help.contains("development.runtime.dev-dir") shouldBe true
+    help.contains("TEXTUS_USE_DEVELOPMENT=true") shouldBe true
+    help.contains("TEXTUS_RUNTIME_DEV_DIR") shouldBe true
   }
 
   def runtimeVersion(): Unit = _with_temp_paths { paths =>
+    Given("a project selects a Textus runtime version in launcher config")
     _write(paths.cwd.resolve(".textus").resolve("config.yaml"), "runtime:\n  version: 0.1.0\n")
-    val launcher = new TextusLauncher(paths, FakeResolver(), FakeInvoker())
-    val (code, output) = _capture_stdout {
-      launcher.run(Vector("version"))
-    }
+    val invoker = FakeInvoker()
+    val resolver = FakeResolver()
+    val launcher = new TextusLauncher(paths, resolver, invoker)
+
+    When("the launcher version command is executed")
+    val code = launcher.run(Vector("version"))
+
+    Then("the launcher delegates version reporting to the selected CNCF runtime")
     _assert_equals(code, 0)
-    _assert_equals(output.trim, "0.1.0")
-    _assert_equals(TextusCommandParser.parse(Vector("version")), TextusCommand.Runtime.Current)
-    _assert_equals(TextusCommandParser.parse(Vector("--version")), TextusCommand.Runtime.Current)
+    _assert_equals(resolver.resolvedVersions, Vector("0.1.0"))
+    _assert_equals(resolver.resolvedClasspaths, Vector("0.1.0"))
+    _assert_equals(invoker.lastClasspath, Vector(paths.cwd.resolve("fake-cncf-0.1.0.jar")))
+    _assert_equals(invoker.lastArgs, Vector("version"))
+    _assert_equals(TextusCommandParser.parse(Vector("version")), TextusCommand.Runtime.Version(None, None))
+    _assert_equals(TextusCommandParser.parse(Vector("--version")), TextusCommand.Runtime.Version(None, None))
+
+    Given("a runtime development directory is provided explicitly")
+    val devdir = paths.cwd.resolve("cncf-dev")
+    val classdir = devdir.resolve("target").resolve("classes")
+    val devinvoker = FakeInvoker()
+    val exporter = FakeClasspathExporter(classdir.toString)
+    val devlauncher = new TextusLauncher(paths, FakeResolver(), devinvoker, exporter)
+
+    When("the launcher version command is executed against the runtime development directory")
+    val devcode = devlauncher.run(Vector("--runtime-dev-dir", devdir.toString, "version"))
+
+    Then("the launcher invokes the development CNCF runtime version command")
+    _assert_equals(devcode, 0)
+    _assert_equals(exporter.projects, Vector(devdir))
+    _assert_equals(devinvoker.lastClasspath, Vector(classdir))
+    _assert_equals(devinvoker.lastArgs, Vector("version"))
+    _assert_equals(
+      TextusCommandParser.parse(Vector("--runtime-dev-dir", devdir.toString, "version")),
+      TextusCommand.Runtime.Version(None, Some(devdir.toString))
+    )
+  }
+
+  def runtimeDevelopmentConfig(): Unit = _with_temp_paths { paths =>
+    Given("a launcher config declares an inactive development runtime directory")
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"), "development:\n  runtime:\n    dev-dir: ../cncf-dev\n")
+
+    When("the launcher config is loaded without development mode")
+    val inactive = LauncherConfig.load(paths, Vector.empty, Map.empty)
+
+    Then("the development directory remains metadata and is not active")
+    _assert_equals(inactive.runtimeDevDir, None)
+    _assert_equals(inactive.developmentRuntimeDevDir, Some("../cncf-dev"))
+
+    When("TEXTUS_USE_DEVELOPMENT enables development mode")
+    val active = LauncherConfig.load(paths, Vector.empty, Map("TEXTUS_USE_DEVELOPMENT" -> "true"))
+
+    Then("the development runtime directory becomes the active runtime development directory")
+    _assert_equals(active.runtimeDevDir, Some("../cncf-dev"))
+
+    When("TEXTUS_RUNTIME_DEV_DIR is provided")
+    val overridden = LauncherConfig.load(paths, Vector.empty, Map(
+      "TEXTUS_USE_DEVELOPMENT" -> "true",
+      "TEXTUS_RUNTIME_DEV_DIR" -> "/tmp/textus-runtime"
+    ))
+
+    Then("the explicit environment runtime development directory takes precedence")
+    _assert_equals(overridden.runtimeDevDir, Some("/tmp/textus-runtime"))
+
+    And("CNCF_RUNTIME_DEV_DIR is accepted as a CNCF-compatible alias")
+    val cncfalias = LauncherConfig.load(paths, Vector.empty, Map("CNCF_RUNTIME_DEV_DIR" -> "/tmp/cncf-runtime"))
+    _assert_equals(cncfalias.runtimeDevDir, Some("/tmp/cncf-runtime"))
   }
 
   def launcherVersion(): Unit = _with_temp_paths { paths =>
@@ -1012,6 +1083,19 @@ final class FakeResolver extends CncfRuntimeResolver {
 
 object FakeResolver {
   def apply(): FakeResolver = new FakeResolver()
+}
+
+final class FakeClasspathExporter(classpath: String) extends RuntimeClasspathExporter {
+  var projects: Vector[Path] = Vector.empty
+
+  def exportRuntimeClasspath(project: Path): String = {
+    projects :+= project
+    classpath
+  }
+}
+
+object FakeClasspathExporter {
+  def apply(classpath: String): FakeClasspathExporter = new FakeClasspathExporter(classpath)
 }
 
 final class FakeInvoker extends CncfInvoker {

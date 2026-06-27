@@ -9,7 +9,7 @@ import scala.util.Using
 
 /*
  * @since   May. 17, 2026
- * @version May. 17, 2026
+ * @version Jun. 27, 2026
  * @author  ASAMI, Tomoharu
  */
 trait CncfRuntimeResolver {
@@ -17,6 +17,27 @@ trait CncfRuntimeResolver {
     version
 
   def resolve(version: String, config: LauncherConfig, paths: LauncherPaths): Vector[Path]
+}
+
+
+trait RuntimeClasspathExporter {
+  def exportRuntimeClasspath(project: Path): String
+}
+
+object SbtRuntimeClasspathExporter extends RuntimeClasspathExporter {
+  def exportRuntimeClasspath(project: Path): String = {
+    val out = new StringBuilder
+    val err = new StringBuilder
+    val code = Process(Vector("sbt", "--batch", "export Runtime / fullClasspath"), project.toFile)
+      .!(ProcessLogger(line => out.append(line).append("\n"), line => err.append(line).append("\n")))
+    if (code != 0)
+      throw TextusException(s"failed to resolve Runtime / fullClasspath for ${project}: ${err.toString.trim}", 2)
+    out.toString.linesIterator
+      .map(_.trim)
+      .find(line => line.startsWith("/") && line.contains(File.pathSeparator))
+      .orElse(out.toString.linesIterator.map(_.trim).find(_.startsWith("/")))
+      .getOrElse(throw TextusException(s"failed to find classpath in sbt output for ${project}", 2))
+  }
 }
 
 final class CoursierCncfRuntimeResolver(

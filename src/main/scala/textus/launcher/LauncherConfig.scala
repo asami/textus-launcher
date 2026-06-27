@@ -11,6 +11,8 @@ import org.goldenport.launcher.{LauncherConfigLoader => CoreLauncherConfigLoader
  */
 final case class LauncherConfig(
   runtimeVersion: Option[String] = None,
+  runtimeDevDir: Option[String] = None,
+  developmentRuntimeDevDir: Option[String] = None,
   runtimeCatalogUrl: Option[String] = None,
   runtimeSelectionPolicy: Option[RuntimeSelectionPolicy] = None,
   runtimeNoCompatiblePolicy: Option[RuntimeNoCompatiblePolicy] = None,
@@ -22,6 +24,8 @@ final case class LauncherConfig(
   def mergeHigher(higher: LauncherConfig): LauncherConfig =
     LauncherConfig(
       runtimeVersion = higher.runtimeVersion.orElse(runtimeVersion),
+      runtimeDevDir = higher.runtimeDevDir.orElse(runtimeDevDir),
+      developmentRuntimeDevDir = higher.developmentRuntimeDevDir.orElse(developmentRuntimeDevDir),
       runtimeCatalogUrl = higher.runtimeCatalogUrl.orElse(runtimeCatalogUrl),
       runtimeSelectionPolicy = higher.runtimeSelectionPolicy.orElse(runtimeSelectionPolicy),
       runtimeNoCompatiblePolicy = higher.runtimeNoCompatiblePolicy.orElse(runtimeNoCompatiblePolicy),
@@ -30,6 +34,9 @@ final case class LauncherConfig(
       mavenRepositories = _merge_list(mavenRepositories, higher.mavenRepositories),
       coursierRepositories = _merge_list(coursierRepositories, higher.coursierRepositories)
     )
+
+  def withDevelopmentEnabled: LauncherConfig =
+    copy(runtimeDevDir = runtimeDevDir.orElse(developmentRuntimeDevDir))
 
   def normalizedWithDefaults: LauncherConfig =
     normalizedWithDefaults(LauncherPaths())
@@ -89,6 +96,13 @@ object LauncherConfig {
   def load(
     paths: LauncherPaths,
     configfiles: Vector[String]
+  ): LauncherConfig =
+    load(paths, configfiles, sys.env)
+
+  def load(
+    paths: LauncherPaths,
+    configfiles: Vector[String],
+    environment: Map[String, String]
   ): LauncherConfig = {
     val corepaths = CoreLauncherPaths(home = paths.home, cwd = paths.cwd)
     val explicit =
@@ -99,7 +113,12 @@ object LauncherConfig {
       } catch {
         case e: LauncherCoreException => throw new TextusException(e.getMessage, e.code)
       }
-    explicit.normalizedWithDefaults(paths)
+    val development =
+      if (_use_development(environment))
+        explicit.withDevelopmentEnabled
+      else
+        explicit
+    development.mergeHigher(fromEnvironment(environment)).normalizedWithDefaults(paths)
   }
 
   def loadFile(path: Path): LauncherConfig =
@@ -124,6 +143,8 @@ object LauncherConfig {
 
     LauncherConfig(
       runtimeVersion = _first_("runtime.version", "textus.runtime.version", "version"),
+      runtimeDevDir = _first_("runtime.dev-dir", "runtime.dev_dir", "textus.runtime.dev-dir", "textus.runtime.dev_dir", "runtime.devDir", "runtime.dev.dir", "textus.runtime.devDir", "textus.runtime.dev.dir"),
+      developmentRuntimeDevDir = _first_("development.runtime.dev-dir", "development.runtime.dev_dir", "development.runtime.devDir", "development.runtime.dev.dir", "textus.development.runtime.dev-dir", "textus.development.runtime.dev_dir", "textus.development.runtime.devDir", "textus.development.runtime.dev.dir"),
       runtimeCatalogUrl = _first_("runtime.catalog.url", "textus.runtime.catalog.url", "catalog.url"),
       runtimeSelectionPolicy = _first_("runtime.cncf.selection-policy", "runtime.cncf.selection_policy", "runtime.cncf.selectionPolicy", "textus.runtime.cncf.selection-policy", "textus.runtime.cncf.selection_policy", "textus.runtime.cncf.selectionPolicy").
         map(RuntimeSelectionPolicy.parse),
@@ -135,6 +156,16 @@ object LauncherConfig {
       coursierRepositories = _all_("repositories.coursier", "textus.repository.coursier")
     )
   }
+
+  def fromEnvironment(environment: Map[String, String]): LauncherConfig =
+    LauncherConfig(
+      runtimeDevDir = environment.get("TEXTUS_RUNTIME_DEV_DIR").orElse(environment.get("CNCF_RUNTIME_DEV_DIR"))
+    )
+
+  private def _use_development(environment: Map[String, String]): Boolean =
+    environment.get("TEXTUS_USE_DEVELOPMENT")
+      .orElse(environment.get("CNCF_USE_DEVELOPMENT"))
+      .exists(value => Set("true", "yes", "on", "1").contains(value.trim.toLowerCase))
 
   def localCarRepositories(paths: LauncherPaths): Vector[String] =
     Vector(paths.localCarRepository.toString)

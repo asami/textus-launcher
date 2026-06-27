@@ -1,17 +1,21 @@
 package textus.launcher
 
-import java.nio.file.Files
+import java.io.File
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Path}
+import scala.sys.process.*
 
 /*
  * @since   May. 17, 2026
  *  version May. 27, 2026
- * @version Jun. 20, 2026
+ * @version Jun. 27, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
   paths: LauncherPaths = LauncherPaths(),
   runtimeresolver: CncfRuntimeResolver = CoursierCncfRuntimeResolver(),
-  cncfinvoker: CncfInvoker = CncfInvoker()
+  cncfinvoker: CncfInvoker = CncfInvoker(),
+  classpathexporter: RuntimeClasspathExporter = SbtRuntimeClasspathExporter
 ) {
   def run(args: Vector[String]): Int = {
     val (configfiles, commandargs) = _take_config_options(args)
@@ -51,6 +55,8 @@ final class TextusLauncher(
     val store = RuntimeVersionStore(paths)
     val catalogstore = RuntimeCatalogStore(paths)
     command match {
+      case TextusCommand.Runtime.Version(runtimeversion, runtimedevdir) =>
+        _run_runtime_version(runtimeversion, runtimedevdir, store, config)
       case TextusCommand.Runtime.Current =>
         _run_runtime_current(store, catalogstore, config)
       case TextusCommand.Runtime.LocalList =>
@@ -114,6 +120,47 @@ final class TextusLauncher(
         println(LauncherConfig.render(config))
         0
     }
+  }
+
+  private def _run_runtime_version(
+    runtimeversion: Option[String],
+    runtimedevdir: Option[String],
+    store: RuntimeVersionStore,
+    config: LauncherConfig
+  ): Int = {
+    val classpath = _runtime_classpath(runtimeversion, runtimedevdir, store, config)
+    cncfinvoker.invoke(classpath, Vector("version"))
+  }
+
+  private def _runtime_classpath(
+    runtimeversion: Option[String],
+    runtimedevdir: Option[String],
+    store: RuntimeVersionStore,
+    config: LauncherConfig
+  ): Vector[Path] =
+    runtimedevdir.orElse(config.runtimeDevDir) match {
+      case Some(dir) =>
+        _development_runtime_classpath(paths.cwd.resolve(dir).normalize.toAbsolutePath.normalize)
+      case None =>
+        val selector = store.current(runtimeversion, config)
+        runtimeresolver.resolve(selector, config, paths)
+    }
+
+  private def _development_runtime_classpath(project: Path): Vector[Path] = {
+    val file = project.resolve("target").resolve("cncf.d").resolve("runtime-classpath.txt")
+    val classpath =
+      if (Files.isRegularFile(file) && Files.size(file) > 0L) {
+        Files.readString(file, StandardCharsets.UTF_8).trim
+      } else {
+        val exported = classpathexporter.exportRuntimeClasspath(project)
+        Files.createDirectories(file.getParent)
+        Files.writeString(file, exported + "\n", StandardCharsets.UTF_8)
+        exported
+      }
+    val entries = classpath.split(File.pathSeparator).toVector.map(_.trim).filter(_.nonEmpty).map(Path.of(_))
+    if (entries.isEmpty)
+      throw TextusException(s"CNCF Runtime / fullClasspath was empty for ${project}")
+    entries
   }
 
   private def _run_runtime_current(
@@ -222,7 +269,10 @@ final class TextusLauncher(
       policy = policy
     )
     val cncfargs = _cncf_args(command, resolved, effectiveconfig)
-    val classpath = runtimeresolver.resolve(runtimeversion, effectiveconfig, paths)
+    val classpath = command.runtimeDevDir.orElse(config.runtimeDevDir) match {
+      case Some(dir) => _development_runtime_classpath(paths.cwd.resolve(dir).normalize.toAbsolutePath.normalize)
+      case None => runtimeresolver.resolve(runtimeversion, effectiveconfig, paths)
+    }
     cncfinvoker.invoke(classpath, cncfargs)
   }
 

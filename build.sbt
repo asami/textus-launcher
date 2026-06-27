@@ -1,7 +1,7 @@
 import org.goldenport.cozy.CozyPlugin.autoImport._
 
 ThisBuild / organization := "org.goldenport"
-ThisBuild / version := "0.1.4"
+ThisBuild / version := "0.1.5-SNAPSHOT"
 ThisBuild / scalaVersion := "3.3.7"
 ThisBuild / publishMavenStyle := true
 
@@ -21,14 +21,14 @@ cozyCoursierChannelEntries := Seq(CozyCoursierChannelEntry(
   mainClass = "textus.launcher.TextusMain"
 ))
 
-def launcherBuildInfoSource(target: File, packageName: String, launcherName: String, launcherVersion: String): File = {
+def launcherBuildInfoSource(target: File, packagename: String, launchername: String, launcherversion: String): File = {
   val file = target / "LauncherBuildInfo.scala"
   IO.write(file,
-    s"""package $packageName
+    s"""package $packagename
        |
        |object LauncherBuildInfo {
-       |  val name: String = "$launcherName"
-       |  val version: String = "$launcherVersion"
+       |  val name: String = "$launchername"
+       |  val version: String = "$launcherversion"
        |}
        |""".stripMargin)
   file

@@ -3,7 +3,7 @@ package textus.launcher
 /*
  * @since   May. 17, 2026
  *  version May. 27, 2026
- * @version Jun. 20, 2026
+ * @version Jun. 27, 2026
  * @author  ASAMI, Tomoharu
  */
 enum ArtifactKind {
@@ -27,6 +27,7 @@ object TextusCommand {
     artifact: ArtifactSelector,
     args: Vector[String],
     runtimeVersion: Option[String],
+    runtimeDevDir: Option[String],
     runtimeSelectionPolicy: Option[RuntimeSelectionPolicy],
     runtimeNoCompatiblePolicy: Option[RuntimeNoCompatiblePolicy],
     passthrough: Vector[String]
@@ -34,6 +35,7 @@ object TextusCommand {
 
   sealed trait Runtime extends TextusCommand
   object Runtime {
+    final case class Version(runtimeVersion: Option[String], runtimeDevDir: Option[String]) extends Runtime
     case object Current extends Runtime
     case object LocalList extends Runtime
     case object RemoteList extends Runtime
@@ -58,7 +60,7 @@ object TextusCommand {
 object TextusCommandParser {
   def parse(args: Vector[String]): TextusCommand = {
     if (args == Vector("--version") || args == Vector("version")) {
-      TextusCommand.Runtime.Current
+      TextusCommand.Runtime.Version(None, None)
     } else if (args == Vector("launcher", "version") || args == Vector("launcher", "--version")) {
       TextusCommand.LauncherVersion
     } else if (args == Vector("help") || args == Vector("--help") || args == Vector("-h")) {
@@ -66,23 +68,29 @@ object TextusCommandParser {
     } else if (args.isEmpty || args == Vector("launcher", "help") || args == Vector("launcher", "--help")) {
       TextusCommand.LauncherHelp
     } else {
-      val (runtimeversion, selectionpolicy, nocompatiblepolicy, rest) = _take_global_runtime(args)
-      rest.headOption match {
-        case Some("server") | Some("client") | Some("command") =>
-          _parse_execute(rest, runtimeversion, selectionpolicy, nocompatiblepolicy)
-        case Some("runtime") =>
-          _parse_runtime(rest.tail)
-        case Some(other) =>
-          throw TextusException(s"unknown textus command: $other")
-        case None =>
-          TextusCommand.LauncherHelp
+      val (runtimeversion, runtimedevdir, selectionpolicy, nocompatiblepolicy, rest) = _take_global_runtime(args)
+      rest match {
+        case Vector("--version") | Vector("version") =>
+          TextusCommand.Runtime.Version(runtimeversion, runtimedevdir)
+        case _ =>
+          rest.headOption match {
+            case Some("server") | Some("client") | Some("command") =>
+              _parse_execute(rest, runtimeversion, runtimedevdir, selectionpolicy, nocompatiblepolicy)
+            case Some("runtime") =>
+              _parse_runtime(rest.tail)
+            case Some(other) =>
+              throw TextusException(s"unknown textus command: $other")
+            case None =>
+              TextusCommand.LauncherHelp
+          }
       }
     }
   }
 
-  private def _take_global_runtime(args: Vector[String]): (Option[String], Option[RuntimeSelectionPolicy], Option[RuntimeNoCompatiblePolicy], Vector[String]) = {
+  private def _take_global_runtime(args: Vector[String]): (Option[String], Option[String], Option[RuntimeSelectionPolicy], Option[RuntimeNoCompatiblePolicy], Vector[String]) = {
     val out = Vector.newBuilder[String]
     var runtime: Option[String] = None
+    var runtimedevdir: Option[String] = None
     var selectionpolicy: Option[RuntimeSelectionPolicy] = None
     var nocompatiblepolicy: Option[RuntimeNoCompatiblePolicy] = None
     var i = 0
@@ -95,6 +103,14 @@ object TextusCommandParser {
           i += 2
         case x if x.startsWith("--runtime=") =>
           runtime = Some(x.stripPrefix("--runtime="))
+          i += 1
+        case "--runtime-dev-dir" =>
+          if (i + 1 >= args.length)
+            throw TextusException("--runtime-dev-dir requires a value")
+          runtimedevdir = Some(args(i + 1))
+          i += 2
+        case x if x.startsWith("--runtime-dev-dir=") =>
+          runtimedevdir = Some(x.stripPrefix("--runtime-dev-dir="))
           i += 1
         case "--runtime-selection" =>
           if (i + 1 >= args.length)
@@ -117,12 +133,13 @@ object TextusCommandParser {
           i += 1
       }
     }
-    (runtime, selectionpolicy, nocompatiblepolicy, out.result())
+    (runtime, runtimedevdir, selectionpolicy, nocompatiblepolicy, out.result())
   }
 
   private def _parse_execute(
     args: Vector[String],
     runtimeversion: Option[String],
+    runtimedevdir: Option[String],
     selectionpolicy: Option[RuntimeSelectionPolicy],
     nocompatiblepolicy: Option[RuntimeNoCompatiblePolicy]
   ): TextusCommand.Execute = {
@@ -144,7 +161,7 @@ object TextusCommandParser {
           (ArtifactKind.Auto, pre)
       }
     val artifact = parseArtifact(rest1.head, kind)
-    TextusCommand.Execute(mode, artifact, rest1.tail, runtimeversion, selectionpolicy, nocompatiblepolicy, effectivepassthrough)
+    TextusCommand.Execute(mode, artifact, rest1.tail, runtimeversion, runtimedevdir, selectionpolicy, nocompatiblepolicy, effectivepassthrough)
   }
 
   def parseArtifact(value: String, forcedkind: ArtifactKind = ArtifactKind.Auto): ArtifactSelector = {
@@ -196,10 +213,11 @@ object TextusCommandParser {
     """Usage:
       |  textus --version
       |  textus version
+      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] version
       |  textus launcher version
-      |  textus server  <artifact>[:<version>] [options...]
-      |  textus client  <artifact>[:<version>] [args...]
-      |  textus command <artifact>[:<version>] <operation> [params...]
+      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] server  <artifact>[:<version>] [options...]
+      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] client  <artifact>[:<version>] [args...]
+      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] command <artifact>[:<version>] <operation> [params...]
       |  textus runtime current
       |  textus runtime list
       |  textus runtime local list
@@ -231,6 +249,9 @@ object TextusCommandParser {
       |
       |Runtime:
       |  --runtime <version> overrides .textus/version and ~/.textus/version.
+      |  --runtime-dev-dir <dir> runs a CNCF runtime from a development checkout.
+      |  development.runtime.dev-dir is activated by TEXTUS_USE_DEVELOPMENT=true.
+      |  TEXTUS_RUNTIME_DEV_DIR or CNCF_RUNTIME_DEV_DIR overrides the active runtime development checkout.
       |  --config <file> loads an additional Textus launcher config file.
       |  Textus launcher config supports yaml/yml, properties/props, and lightweight conf files.
       |  JSON, XML, and full HOCON are runtime/application config formats, not launcher config formats.
