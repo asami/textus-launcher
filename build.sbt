@@ -1,12 +1,14 @@
 import org.goldenport.cozy.CozyPlugin.autoImport._
 
 ThisBuild / organization := "org.goldenport"
-ThisBuild / version := "0.1.4-SNAPSHOT"
+ThisBuild / version := "0.1.4"
 ThisBuild / scalaVersion := "3.3.7"
 ThisBuild / publishMavenStyle := true
 
+resolvers += "SimpleModeling.org" at "https://www.simplemodeling.org/repository/maven"
+
 libraryDependencies ++= Seq(
-  "org.goldenport" %% "goldenport-launcher-core" % "0.1.0-SNAPSHOT",
+  "org.goldenport" %% "goldenport-launcher-core" % "0.1.0",
   "org.scalatest" %% "scalatest" % "3.2.19" % Test
 )
 
@@ -45,6 +47,9 @@ lazy val root = (project in file("."))
       ))
     }.taskValue,
     Compile / mainClass := Some("textus.launcher.TextusMain"),
+    Test / test := {
+      (Test / runMain).toTask(" textus.launcher.TextusLauncherSpec").value
+    },
     publishTo := {
       val repo = sys.env.get("SIMPLEMODELING_MAVEN_LOCAL")
         .map(file)
