@@ -8,7 +8,7 @@ import scala.sys.process.*
 /*
  * @since   May. 17, 2026
  *  version May. 27, 2026
- * @version Jun. 27, 2026
+ * @version Jun. 29, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
@@ -36,9 +36,51 @@ final class TextusLauncher(
         0
       case runtime: TextusCommand.Runtime =>
         _run_runtime(runtime, config)
+      case install: TextusCommand.InstallCli =>
+        _run_install_cli(install, config)
       case execute: TextusCommand.Execute =>
         _run_execute(execute, config)
     }
+  }
+
+  private def _run_install_cli(
+    command: TextusCommand.InstallCli,
+    config: LauncherConfig
+  ): Int = {
+    val pinned = _pin_install_cli_runtime(command, config)
+    val path = CliInstaller.installTextus(paths, pinned)
+    println(s"installed CLI command ${pinned.name}: ${path}")
+    0
+  }
+
+  private def _pin_install_cli_runtime(
+    command: TextusCommand.InstallCli,
+    config: LauncherConfig
+  ): TextusCommand.InstallCli = {
+    val store = RuntimeVersionStore(paths)
+    val catalog = RuntimeCatalogStore(paths).loadOrRefresh(config)
+    val effectiveconfig = catalog.map(config.withCatalog).getOrElse(config)
+    val resolved = ArtifactResolver().resolve(command.artifact, effectiveconfig)
+    val selectionpolicy = command.runtimeSelectionPolicy.
+      orElse(effectiveconfig.runtimeSelectionPolicy).
+      getOrElse(RuntimeSelectionPolicy.CurrentCompatible)
+    val policy = command.runtimeNoCompatiblePolicy.orElse(effectiveconfig.runtimeNoCompatiblePolicy).getOrElse(RuntimeNoCompatiblePolicy.Error)
+    val runtimedevdir = command.runtimeDevDir.orElse(config.runtimeDevDir)
+    val runtimeversion = RuntimeVersionSelection.select(
+      requested = command.runtimeVersion,
+      stored = store.current(None, config),
+      requirements = resolved.runtimeRequirements,
+      catalog = catalog,
+      selectionPolicy = selectionpolicy,
+      policy = policy
+    )
+    command.copy(
+      artifact = resolved.selector,
+      runtimeVersion = if (runtimedevdir.isDefined) None else Some(runtimeversion),
+      runtimeDevDir = runtimedevdir,
+      runtimeSelectionPolicy = None,
+      runtimeNoCompatiblePolicy = None
+    )
   }
 
   private def _run_runtime_help(config: LauncherConfig): Int = {

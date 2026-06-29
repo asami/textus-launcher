@@ -3,7 +3,7 @@ package textus.launcher
 /*
  * @since   May. 17, 2026
  *  version May. 27, 2026
- * @version Jun. 27, 2026
+ * @version Jun. 29, 2026
  * @author  ASAMI, Tomoharu
  */
 enum ArtifactKind {
@@ -22,6 +22,19 @@ final case class ArtifactSelector(
 sealed trait TextusCommand
 
 object TextusCommand {
+  final case class InstallCli(
+    name: String,
+    artifact: ArtifactSelector,
+    operationPrefix: String,
+    binDir: Option[String],
+    fileParams: Vector[String],
+    overwrite: Boolean,
+    runtimeVersion: Option[String] = None,
+    runtimeDevDir: Option[String] = None,
+    runtimeSelectionPolicy: Option[RuntimeSelectionPolicy] = None,
+    runtimeNoCompatiblePolicy: Option[RuntimeNoCompatiblePolicy] = None
+  ) extends TextusCommand
+
   final case class Execute(
     mode: String,
     artifact: ArtifactSelector,
@@ -74,10 +87,14 @@ object TextusCommandParser {
           TextusCommand.Runtime.Version(runtimeversion, runtimedevdir)
         case _ =>
           rest.headOption match {
+            case Some("install-cli") =>
+              _parse_install_cli(rest.tail, runtimeversion, runtimedevdir, selectionpolicy, nocompatiblepolicy)
             case Some("server") | Some("client") | Some("command") =>
               _parse_execute(rest, runtimeversion, runtimedevdir, selectionpolicy, nocompatiblepolicy)
             case Some("runtime") =>
               _parse_runtime(rest.tail)
+            case Some(target) if rest.drop(1).headOption.exists(_is_target_mode) && !_is_reserved_target(target) =>
+              _parse_target_execute(rest, runtimeversion, runtimedevdir, selectionpolicy, nocompatiblepolicy)
             case Some(other) =>
               throw TextusException(s"unknown textus command: $other")
             case None =>
@@ -85,6 +102,76 @@ object TextusCommandParser {
           }
       }
     }
+  }
+
+  private def _parse_install_cli(
+    args: Vector[String],
+    runtimeversion: Option[String],
+    runtimedevdir: Option[String],
+    selectionpolicy: Option[RuntimeSelectionPolicy],
+    nocompatiblepolicy: Option[RuntimeNoCompatiblePolicy]
+  ): TextusCommand.InstallCli = {
+    var name: Option[String] = None
+    var artifact: Option[ArtifactSelector] = None
+    var operationprefix: Option[String] = None
+    var bindir: Option[String] = None
+    var fileparams = Vector.empty[String]
+    var overwrite = false
+    var i = 0
+    while (i < args.length) {
+      args(i) match {
+        case "--artifact" =>
+          if (i + 1 >= args.length) throw TextusException("--artifact requires a value")
+          artifact = Some(parseArtifact(args(i + 1)))
+          i += 2
+        case x if x.startsWith("--artifact=") =>
+          artifact = Some(parseArtifact(x.stripPrefix("--artifact=")))
+          i += 1
+        case "--operation-prefix" =>
+          if (i + 1 >= args.length) throw TextusException("--operation-prefix requires a value")
+          operationprefix = Some(args(i + 1))
+          i += 2
+        case x if x.startsWith("--operation-prefix=") =>
+          operationprefix = Some(x.stripPrefix("--operation-prefix="))
+          i += 1
+        case "--bin-dir" =>
+          if (i + 1 >= args.length) throw TextusException("--bin-dir requires a value")
+          bindir = Some(args(i + 1))
+          i += 2
+        case x if x.startsWith("--bin-dir=") =>
+          bindir = Some(x.stripPrefix("--bin-dir="))
+          i += 1
+        case "--file-param" =>
+          if (i + 1 >= args.length) throw TextusException("--file-param requires a value")
+          fileparams :+= args(i + 1)
+          i += 2
+        case x if x.startsWith("--file-param=") =>
+          fileparams :+= x.stripPrefix("--file-param=")
+          i += 1
+        case "--overwrite" =>
+          overwrite = true
+          i += 1
+        case x if x.startsWith("--") =>
+          throw TextusException(s"unknown textus install-cli option: $x")
+        case x =>
+          if (name.isEmpty) name = Some(x)
+          else if (artifact.isEmpty) artifact = Some(parseArtifact(x))
+          else throw TextusException(s"unexpected textus install-cli argument: $x")
+          i += 1
+      }
+    }
+    TextusCommand.InstallCli(
+      name.getOrElse(throw TextusException("textus install-cli requires a command name")),
+      artifact.getOrElse(throw TextusException("textus install-cli requires an artifact")),
+      operationprefix.getOrElse(throw TextusException("textus install-cli requires --operation-prefix")),
+      bindir,
+      fileparams,
+      overwrite,
+      runtimeVersion = runtimeversion,
+      runtimeDevDir = runtimedevdir,
+      runtimeSelectionPolicy = selectionpolicy,
+      runtimeNoCompatiblePolicy = nocompatiblepolicy
+    )
   }
 
   private def _take_global_runtime(args: Vector[String]): (Option[String], Option[String], Option[RuntimeSelectionPolicy], Option[RuntimeNoCompatiblePolicy], Vector[String]) = {
@@ -134,6 +221,27 @@ object TextusCommandParser {
       }
     }
     (runtime, runtimedevdir, selectionpolicy, nocompatiblepolicy, out.result())
+  }
+
+  private def _is_target_mode(value: String): Boolean =
+    value == "command" || value == "server" || value == "client"
+
+  private def _is_reserved_target(value: String): Boolean =
+    Set("runtime", "install-cli", "version", "help", "launcher", "dev").contains(value)
+
+  private def _parse_target_execute(
+    args: Vector[String],
+    runtimeversion: Option[String],
+    runtimedevdir: Option[String],
+    selectionpolicy: Option[RuntimeSelectionPolicy],
+    nocompatiblepolicy: Option[RuntimeNoCompatiblePolicy]
+  ): TextusCommand.Execute = {
+    val target = args.head
+    val mode = args(1)
+    val rest0 = args.drop(2)
+    val (pre, passthrough) = rest0.span(_ != "--")
+    val effectivepassthrough = if (passthrough.isEmpty) Vector.empty else passthrough.tail
+    TextusCommand.Execute(mode, parseArtifact(target), pre, runtimeversion, runtimedevdir, selectionpolicy, nocompatiblepolicy, effectivepassthrough)
   }
 
   private def _parse_execute(
@@ -215,9 +323,13 @@ object TextusCommandParser {
       |  textus version
       |  textus [--runtime <version>] [--runtime-dev-dir <dir>] version
       |  textus launcher version
-      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] server  <artifact>[:<version>] [options...]
-      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] client  <artifact>[:<version>] [args...]
-      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] command <artifact>[:<version>] <operation> [params...]
+      |  textus install-cli <command-name> <artifact> --operation-prefix <component.service> [--file-param <name>...] [--bin-dir <dir>] [--overwrite]
+      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] <target> server [options...]
+      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] <target> client [args...]
+      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] <target> command <operation> [params...]
+      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] server  <artifact>[:<version>] [options...]   (compatibility)
+      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] client  <artifact>[:<version>] [args...]       (compatibility)
+      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] command <artifact>[:<version>] <operation> [params...] (compatibility)
       |  textus runtime current
       |  textus runtime list
       |  textus runtime local list

@@ -4,9 +4,9 @@
 It keeps CNCF development commands separate from application operation:
 
 ```bash
-textus server textus-blog
-textus client textus-blog ...
-textus command textus-blog:0.1.0 blog.post.search limit=10
+textus textus-blog server
+textus textus-blog client ...
+textus textus-blog:0.1.0 command blog.post.search limit=10
 textus runtime current
 ```
 
@@ -29,6 +29,32 @@ https://www.simplemodeling.org/repository/textus/runtime-catalog.yaml
 This catalog is operational metadata. It is not sourced from SmartDox article
 publication, so `recommended` and `disabled` changes are not coupled to article
 deployment timing.
+
+## CLI Installation
+
+`textus install-cli` installs a user-facing command that delegates to a
+packaged CAR/SAR artifact through `textus <artifact> command`. This is the operational
+path for general users.
+
+```bash
+textus install-cli sanpomap textus-sanpomap:0.1.0 \
+  --operation-prefix sanpomap.presentation \
+  --file-param presentationDsl \
+  --bin-dir ~/bin \
+  --overwrite
+
+sanpomap validate-presentation --presentationDsl xxx.yaml --format yaml
+```
+
+The installed command treats the first argument as an operation name and
+combines it with the operation prefix. In the example above,
+`validate-presentation` becomes
+`sanpomap.presentation.validate-presentation`.
+
+`--file-param <name>` marks parameters whose values may be file paths. If the
+value exists as a file, the installed command reads the file and passes its
+contents to the CNCF operation. Camel-case and kebab-case aliases are both
+accepted, so `presentationDsl` also accepts `--presentation-dsl`.
 
 ## Configuration
 
@@ -140,8 +166,8 @@ launchers and their tests together.
 Use `artifact:version` when selecting an explicit CAR/SAR version:
 
 ```bash
-textus server textus-blog:0.1.0
-textus command textus-blog:0.1.0 blog.post.search limit=10
+textus textus-blog:0.1.0 server
+textus textus-blog:0.1.0 command blog.post.search limit=10
 ```
 
 The older `artifact@version` spelling remains accepted for compatibility, but

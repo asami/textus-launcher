@@ -8,7 +8,7 @@ import java.nio.file.{Files, Path}
 /*
  * @since   May. 17, 2026
  *  version May. 27, 2026
- * @version Jun. 27, 2026
+ * @version Jun. 29, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -26,6 +26,7 @@ object TextusLauncherSpec {
     spec.runtimeVersionPrecedence()
     spec.runtimeUseWritesExpectedFiles()
     spec.runtimeUseAutoSelectsProjectWhenTextusDirectoryExists()
+    spec.installCliWritesUserFacingCommand()
     spec.runtimeCatalogParseAndSelectorResolution()
     spec.runtimeCatalogCommands()
     spec.runtimeCurrentWarnsWhenCachedRecommendedIsStale()
@@ -146,6 +147,13 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
         When("the launcher behavior is exercised")
         Then("the executable specification holds through scenario-specific expectations")
         runtimeUseAutoSelectsProjectWhenTextusDirectoryExists()
+      }
+
+      "install cli writes user facing command" in {
+        Given("the textus launcher scenario: install cli writes user facing command")
+        When("the launcher installs a domain command")
+        Then("the command delegates to textus command with file parameter expansion")
+        installCliWritesUserFacingCommand()
       }
 
       "runtime catalog commands" in {
@@ -289,6 +297,13 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     _assert_equals(command.artifact.kind, ArtifactKind.Auto)
     _assert_equals(command.args, Vector("blog.post.search", "limit=10"))
 
+    val targetfirst = TextusCommandParser.parse(Vector("textus-blog:0.1.0", "command", "blog.post.search", "limit=10"))
+      .asInstanceOf[TextusCommand.Execute]
+    _assert_equals(targetfirst.mode, "command")
+    _assert_equals(targetfirst.artifact.name, "textus-blog")
+    _assert_equals(targetfirst.artifact.version, Some("0.1.0"))
+    _assert_equals(targetfirst.args, Vector("blog.post.search", "limit=10"))
+
     val legacy = TextusCommandParser.parse(Vector("server", "textus-blog@0.1.0"))
       .asInstanceOf[TextusCommand.Execute]
     _assert_equals(legacy.artifact.name, "textus-blog")
@@ -338,6 +353,26 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       .asInstanceOf[TextusCommand.Runtime.Use]
     _assert_equals(autouse.version, "latest")
     _assert_equals(autouse.target, TextusCommand.RuntimeUseTarget.Auto)
+
+    val install = TextusCommandParser.parse(Vector(
+      "install-cli",
+      "sanpomap",
+      "textus-sanpomap:0.1.0",
+      "--operation-prefix",
+      "sanpomap.presentation",
+      "--file-param",
+      "presentationDsl",
+      "--bin-dir",
+      "bin",
+      "--overwrite"
+    )).asInstanceOf[TextusCommand.InstallCli]
+    _assert_equals(install.name, "sanpomap")
+    _assert_equals(install.artifact.name, "textus-sanpomap")
+    _assert_equals(install.artifact.version, Some("0.1.0"))
+    _assert_equals(install.operationPrefix, "sanpomap.presentation")
+    _assert_equals(install.fileParams, Vector("presentationDsl"))
+    _assert_equals(install.binDir, Some("bin"))
+    install.overwrite shouldBe true
   }
 
   def helpExplainsLocalRepository(): Unit = {
@@ -553,6 +588,35 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     launcher.run(Vector("runtime", "use", "latest"))
     _assert_equals(Files.readString(paths.projectVersion).trim, "latest")
     Files.isRegularFile(paths.globalVersion) shouldBe false
+  }
+
+  def installCliWritesUserFacingCommand(): Unit = _with_temp_paths { paths =>
+    val bindir = paths.cwd.resolve("bin")
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"), "runtime:\n  version: 0.4.12\n")
+    _write(paths.localCarRepository.resolve("textus-sanpomap").resolve("0.1.0").resolve("textus-sanpomap-0.1.0.car"), "car")
+    val launcher = new TextusLauncher(paths, FakeResolver(), FakeInvoker())
+    val code = launcher.run(Vector(
+      "install-cli",
+      "sanpomap",
+      "textus-sanpomap:0.1.0",
+      "--operation-prefix",
+      "sanpomap.presentation",
+      "--file-param",
+      "presentationDsl",
+      "--bin-dir",
+      bindir.toString
+    ))
+
+    _assert_equals(code, 0)
+    val script = Files.readString(bindir.resolve("sanpomap"))
+    script.contains("artifact='textus-sanpomap:0.1.0'") shouldBe true
+    script.contains("operation_prefix='sanpomap.presentation'") shouldBe true
+    script.contains("runtime_version='0.4.12'") shouldBe true
+    script.contains("runtime_dev_dir=''") shouldBe true
+    script.contains("presentationDsl") shouldBe true
+    script.contains("presentation-dsl") shouldBe true
+    script.contains("exec textus \"${textus_args[@]}\" \"$artifact\" command \"$selector\"") shouldBe true
+    Files.isExecutable(bindir.resolve("sanpomap")) shouldBe true
   }
 
   def runtimeCatalogParseAndSelectorResolution(): Unit = {
