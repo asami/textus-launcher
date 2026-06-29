@@ -6,7 +6,7 @@ import org.goldenport.launcher.{LauncherConfigLoader => CoreLauncherConfigLoader
 
 /*
  * @since   May. 17, 2026
- * @version Jun. 27, 2026
+ * @version Jun. 29, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class LauncherConfig(
@@ -43,8 +43,8 @@ final case class LauncherConfig(
 
   def normalizedWithDefaults(paths: LauncherPaths): LauncherConfig =
     copy(
-      carRepositories = _append_defaults(carRepositories, LauncherConfig.localCarRepositories(paths) ++ LauncherConfig.cacheCarRepositories(paths) ++ LauncherConfig.DEFAULT_CAR_REPOSITORIES),
-      sarRepositories = _append_defaults(sarRepositories, LauncherConfig.localSarRepositories(paths) ++ LauncherConfig.cacheSarRepositories(paths) ++ LauncherConfig.DEFAULT_SAR_REPOSITORIES),
+      carRepositories = _append_defaults(_normalize_repositories(paths, carRepositories), LauncherConfig.localCarRepositories(paths) ++ LauncherConfig.cacheCarRepositories(paths) ++ LauncherConfig.DEFAULT_CAR_REPOSITORIES),
+      sarRepositories = _append_defaults(_normalize_repositories(paths, sarRepositories), LauncherConfig.localSarRepositories(paths) ++ LauncherConfig.cacheSarRepositories(paths) ++ LauncherConfig.DEFAULT_SAR_REPOSITORIES),
       mavenRepositories = _append_defaults(mavenRepositories, LauncherConfig.DEFAULT_MAVEN_REPOSITORIES),
       runtimeSelectionPolicy = runtimeSelectionPolicy.orElse(Some(RuntimeSelectionPolicy.CurrentCompatible)),
       runtimeNoCompatiblePolicy = runtimeNoCompatiblePolicy.orElse(Some(RuntimeNoCompatiblePolicy.Error)),
@@ -79,6 +79,23 @@ final case class LauncherConfig(
     val explicit = configured.filterNot(defaults.contains)
     (explicit ++ catalog ++ defaults).distinct
   }
+
+  private def _normalize_repositories(
+    paths: LauncherPaths,
+    repositories: Vector[String]
+  ): Vector[String] =
+    repositories.map { repository =>
+      val trimmed = repository.trim
+      if (trimmed.contains("://") || trimmed.startsWith("file:")) {
+        trimmed
+      } else {
+        val path = Path.of(trimmed)
+        if (path.isAbsolute)
+          path.normalize.toString
+        else
+          paths.cwd.resolve(path).normalize.toAbsolutePath.normalize.toString
+      }
+    }
 }
 
 object LauncherConfig {

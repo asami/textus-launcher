@@ -11,19 +11,25 @@ import java.nio.file.{Files, Path}
 object CliInstaller {
   def installTextus(
     paths: LauncherPaths,
-    command: TextusCommand.InstallCli
+    command: TextusCommand.InstallCli,
+    config: LauncherConfig
   ): Path = {
     val bindir = command.binDir.map(p => paths.cwd.resolve(p).normalize).getOrElse(paths.home.resolve("bin"))
     val target = bindir.resolve(command.name)
+    val configtarget = target.resolveSibling(s"${target.getFileName}.config.yaml")
     if (Files.exists(target) && !command.overwrite)
       throw TextusException(s"CLI command already exists: ${target}; use --overwrite")
     Files.createDirectories(bindir)
-    Files.writeString(target, textusScript(command), StandardCharsets.UTF_8)
+    Files.writeString(configtarget, _textus_config(config), StandardCharsets.UTF_8)
+    Files.writeString(target, textusScript(configtarget, command), StandardCharsets.UTF_8)
     target.toFile.setExecutable(true, false)
     target
   }
 
-  def textusScript(command: TextusCommand.InstallCli): String = {
+  def textusScript(
+    configpath: Path,
+    command: TextusCommand.InstallCli
+  ): String = {
     val fileparams = _file_param_aliases(command.fileParams)
     val fileparamcases = _file_param_cases(fileparams)
     val runtimeversion = command.runtimeVersion.getOrElse("")
@@ -31,8 +37,9 @@ object CliInstaller {
     s"""#!/usr/bin/env bash
        |set -euo pipefail
        |
-       |artifact='${_shell(command.artifact.display)}'
        |operation_prefix='${_shell(command.operationPrefix)}'
+       |launcher_config='${_shell(configpath.toAbsolutePath.normalize.toString)}'
+       |artifact='${_shell(command.artifact.display)}'
        |runtime_version='${_shell(runtimeversion)}'
        |runtime_dev_dir='${_shell(runtimedevdir)}'
        |
@@ -45,7 +52,7 @@ object CliInstaller {
        |  ${command.name} validate-presentation --presentationDsl xxx.yaml
        |
        |This command delegates to:
-       |  textus ${command.artifact.display} command ${command.operationPrefix}.<operation>
+       |  textus --config ${configpath.toAbsolutePath.normalize} ${_render_runtime_usage(command)} ${command.artifact.display} command ${command.operationPrefix}.<operation>
        |EOF
        |}
        |
@@ -119,8 +126,29 @@ object CliInstaller {
        |  esac
        |done
        |
-       |exec textus "$${textus_args[@]}" "$$artifact" command "$$selector" "$${command_args[@]}"
+       |exec textus --config "$$launcher_config" "$${textus_args[@]}" "$$artifact" command "$$selector" "$${command_args[@]}"
        |""".stripMargin
+  }
+
+  private def _textus_config(
+    config: LauncherConfig
+  ): String = {
+    val cars = config.carRepositories.distinct.map(x => s"    - ${x}").mkString("\n")
+    val sars = config.sarRepositories.distinct.map(x => s"    - ${x}").mkString("\n")
+    s"""repositories:
+       |  car:
+       |${cars}
+       |  sar:
+       |${sars}
+       |""".stripMargin
+  }
+
+  private def _render_runtime_usage(command: TextusCommand.InstallCli): String = {
+    val args = Vector.newBuilder[String]
+    command.runtimeVersion.foreach(v => args += s"--runtime ${v}")
+    command.runtimeDevDir.foreach(v => args += s"--runtime-dev-dir ${v}")
+    val rendered = args.result().mkString(" ")
+    if (rendered.isEmpty) "" else s"${rendered} "
   }
 
   private def _file_param_aliases(values: Vector[String]): Vector[String] =

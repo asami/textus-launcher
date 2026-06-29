@@ -47,8 +47,8 @@ final class TextusLauncher(
     command: TextusCommand.InstallCli,
     config: LauncherConfig
   ): Int = {
-    val pinned = _pin_install_cli_runtime(command, config)
-    val path = CliInstaller.installTextus(paths, pinned)
+    val (pinned, effectiveconfig) = _pin_install_cli_runtime(command, config)
+    val path = CliInstaller.installTextus(paths, pinned, effectiveconfig)
     println(s"installed CLI command ${pinned.name}: ${path}")
     0
   }
@@ -56,7 +56,7 @@ final class TextusLauncher(
   private def _pin_install_cli_runtime(
     command: TextusCommand.InstallCli,
     config: LauncherConfig
-  ): TextusCommand.InstallCli = {
+  ): (TextusCommand.InstallCli, LauncherConfig) = {
     val store = RuntimeVersionStore(paths)
     val catalog = RuntimeCatalogStore(paths).loadOrRefresh(config)
     val effectiveconfig = catalog.map(config.withCatalog).getOrElse(config)
@@ -74,13 +74,14 @@ final class TextusLauncher(
       selectionPolicy = selectionpolicy,
       policy = policy
     )
-    command.copy(
-      artifact = resolved.selector,
-      runtimeVersion = if (runtimedevdir.isDefined) None else Some(runtimeversion),
-      runtimeDevDir = runtimedevdir,
-      runtimeSelectionPolicy = None,
-      runtimeNoCompatiblePolicy = None
-    )
+    val pinned = command.copy(
+        artifact = resolved.selector,
+        runtimeVersion = if (runtimedevdir.isDefined) None else Some(runtimeversion),
+        runtimeDevDir = runtimedevdir.map(p => paths.cwd.resolve(p).normalize.toAbsolutePath.normalize.toString),
+        runtimeSelectionPolicy = None,
+        runtimeNoCompatiblePolicy = None
+      )
+    (pinned, effectiveconfig)
   }
 
   private def _run_runtime_help(config: LauncherConfig): Int = {

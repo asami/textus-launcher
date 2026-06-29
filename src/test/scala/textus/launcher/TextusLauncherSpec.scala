@@ -592,8 +592,8 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
 
   def installCliWritesUserFacingCommand(): Unit = _with_temp_paths { paths =>
     val bindir = paths.cwd.resolve("bin")
-    _write(paths.cwd.resolve(".textus").resolve("config.yaml"), "runtime:\n  version: 0.4.12\n")
-    _write(paths.localCarRepository.resolve("textus-sanpomap").resolve("0.1.0").resolve("textus-sanpomap-0.1.0.car"), "car")
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"), "runtime:\n  version: 0.4.12\nrepositories:\n  car:\n    - relative-car\n")
+    _write(paths.cwd.resolve("relative-car").resolve("textus-sanpomap").resolve("0.1.0").resolve("textus-sanpomap-0.1.0.car"), "car")
     val launcher = new TextusLauncher(paths, FakeResolver(), FakeInvoker())
     val code = launcher.run(Vector(
       "install-cli",
@@ -609,13 +609,17 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
 
     _assert_equals(code, 0)
     val script = Files.readString(bindir.resolve("sanpomap"))
+    val config = Files.readString(bindir.resolve("sanpomap.config.yaml"))
     script.contains("artifact='textus-sanpomap:0.1.0'") shouldBe true
+    script.contains(s"launcher_config='${bindir.resolve("sanpomap.config.yaml").toAbsolutePath.normalize}'") shouldBe true
     script.contains("operation_prefix='sanpomap.presentation'") shouldBe true
     script.contains("runtime_version='0.4.12'") shouldBe true
     script.contains("runtime_dev_dir=''") shouldBe true
+    config.contains(s"    - ${paths.cwd.resolve("relative-car").toAbsolutePath.normalize}") shouldBe true
+    config.contains(s"    - ${paths.localCarRepository}") shouldBe true
     script.contains("presentationDsl") shouldBe true
     script.contains("presentation-dsl") shouldBe true
-    script.contains("exec textus \"${textus_args[@]}\" \"$artifact\" command \"$selector\"") shouldBe true
+    script.contains("exec textus --config \"$launcher_config\" \"${textus_args[@]}\" \"$artifact\" command \"$selector\"") shouldBe true
     Files.isExecutable(bindir.resolve("sanpomap")) shouldBe true
   }
 
