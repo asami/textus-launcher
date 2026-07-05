@@ -383,9 +383,13 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     help.contains("Snapshot components are local-only") shouldBe true
     help.contains("yaml/yml, properties/props, and lightweight conf") shouldBe true
     help.contains("--runtime-dev-dir <dir>") shouldBe true
+    help.contains("runtime.dev-dir is the configuration equivalent of --runtime-dev-dir") shouldBe true
     help.contains("development.runtime.dev-dir") shouldBe true
     help.contains("TEXTUS_USE_DEVELOPMENT=true") shouldBe true
     help.contains("TEXTUS_RUNTIME_DEV_DIR") shouldBe true
+    help.contains("ancestor .textus/config.yaml") shouldBe true
+    help.contains("Install CLI:") shouldBe true
+    help.contains("--file-param <name> reads existing file values") shouldBe true
   }
 
   def runtimeVersion(): Unit = _with_temp_paths { paths =>
@@ -480,6 +484,7 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     _assert_equals(invoker.lastArgs, Vector("--help"))
     output.contains("Launcher help:") shouldBe true
     output.contains("textus launcher version") shouldBe true
+    output.contains("Textus launcher config loads from ~/.textus/config.yaml") shouldBe true
     _assert_equals(TextusCommandParser.parse(Vector("help")), TextusCommand.RuntimeHelp)
     _assert_equals(TextusCommandParser.parse(Vector("--help")), TextusCommand.RuntimeHelp)
     _assert_equals(TextusCommandParser.parse(Vector("launcher", "help")), TextusCommand.LauncherHelp)

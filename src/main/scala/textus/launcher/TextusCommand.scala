@@ -362,13 +362,20 @@ object TextusCommandParser {
       |Runtime:
       |  --runtime <version> overrides .textus/version and ~/.textus/version.
       |  --runtime-dev-dir <dir> runs a CNCF runtime from a development checkout.
+      |  Config runtime.dev-dir is the configuration equivalent of --runtime-dev-dir.
       |  development.runtime.dev-dir is activated by TEXTUS_USE_DEVELOPMENT=true.
       |  TEXTUS_RUNTIME_DEV_DIR or CNCF_RUNTIME_DEV_DIR overrides the active runtime development checkout.
       |  --config <file> loads an additional Textus launcher config file.
+      |  Textus launcher config loads from ~/.textus/config.yaml, ancestor .textus/config.yaml files, then cwd .textus/config.yaml.
       |  Textus launcher config supports yaml/yml, properties/props, and lightweight conf files.
       |  JSON, XML, and full HOCON are runtime/application config formats, not launcher config formats.
       |  Without --runtime, component runtime.cncf requirements use current-compatible selection by default.
       |  --runtime-selection=current-compatible|tested-latest|latest-compatible|newest-compatible selects the compatible runtime preference.
       |  --runtime-no-compatible=error|newest controls the fallback when no compatible runtime exists.
+      |
+      |Install CLI:
+      |  textus install-cli creates a user-facing command for a packaged CAR/SAR artifact.
+      |  The installed command runs textus <artifact> command <operation-prefix>.<operation>.
+      |  --file-param <name> reads existing file values before passing operation parameters.
       |""".stripMargin
 }
