@@ -1,7 +1,7 @@
 import org.goldenport.cozy.CozyPlugin.autoImport._
 
 ThisBuild / organization := "org.goldenport"
-ThisBuild / version := "0.2.0"
+ThisBuild / version := "0.2.1"
 ThisBuild / scalaVersion := "3.3.8"
 ThisBuild / publishMavenStyle := true
 
@@ -13,6 +13,8 @@ libraryDependencies ++= Seq(
 )
 
 cozyCoursierChannelPath := "repository/textus/coursier-channel.json"
+
+lazy val textusExportLauncherClasspath = taskKey[File]("Write the Textus launcher development classpath")
 
 cozyCoursierChannelEntries := Seq(CozyCoursierChannelEntry(
   name = "textus",
@@ -47,6 +49,13 @@ lazy val root = (project in file("."))
       ))
     }.taskValue,
     Compile / mainClass := Some("textus.launcher.TextusMain"),
+    textusExportLauncherClasspath := {
+      val file = (Compile / target).value / "textus.d" / "runtime-classpath.txt"
+      IO.createDirectory(file.getParentFile)
+      val classpath = (Runtime / fullClasspath).value.map(_.data.getAbsolutePath).mkString(java.io.File.pathSeparator)
+      IO.write(file, classpath + "\n")
+      file
+    },
     Test / test := {
       (Test / runMain).toTask(" textus.launcher.TextusLauncherSpec").value
     },

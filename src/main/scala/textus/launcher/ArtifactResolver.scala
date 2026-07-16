@@ -6,7 +6,8 @@ import scala.util.Using
 
 /*
  * @since   May. 17, 2026
- * @version May. 25, 2026
+ *  version May. 25, 2026
+ * @version Jul. 16, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class ResolvedArtifact(
@@ -15,25 +16,30 @@ final case class ResolvedArtifact(
   runtimeRequirements: Vector[RuntimeRequirement] = Vector.empty
 )
 
+private final case class ArtifactResolution(
+  artifact: Option[ResolvedArtifact],
+  diagnostics: Vector[String] = Vector.empty
+)
+
 final class ArtifactResolver {
   def resolve(selector: ArtifactSelector, config: LauncherConfig): ResolvedArtifact =
     selector.kind match {
       case ArtifactKind.Car =>
         _resolve_artifact(selector, config.carRepositories, ".car") match {
-          case Some(resolved) => resolved.copy(selector = resolved.selector.copy(kind = ArtifactKind.Car), kind = ArtifactKind.Car)
-          case None =>
-            throw TextusException(_not_found_message("CAR", selector))
+          case ArtifactResolution(Some(resolved), _) => resolved.copy(selector = resolved.selector.copy(kind = ArtifactKind.Car), kind = ArtifactKind.Car)
+          case ArtifactResolution(None, diagnostics) =>
+            throw TextusException(_not_found_message("CAR", selector, diagnostics))
         }
       case ArtifactKind.Sar =>
         _resolve_artifact(selector, config.sarRepositories, ".sar") match {
-          case Some(resolved) => resolved.copy(selector = resolved.selector.copy(kind = ArtifactKind.Sar), kind = ArtifactKind.Sar)
-          case None =>
-            throw TextusException(_not_found_message("SAR", selector))
+          case ArtifactResolution(Some(resolved), _) => resolved.copy(selector = resolved.selector.copy(kind = ArtifactKind.Sar), kind = ArtifactKind.Sar)
+          case ArtifactResolution(None, diagnostics) =>
+            throw TextusException(_not_found_message("SAR", selector, diagnostics))
         }
       case ArtifactKind.Auto =>
         val carartifact = _resolve_artifact(selector, config.carRepositories, ".car")
         val sarartifact = _resolve_artifact(selector, config.sarRepositories, ".sar")
-        (carartifact, sarartifact) match {
+        (carartifact.artifact, sarartifact.artifact) match {
           case (Some(resolved), None) =>
             resolved.copy(selector = resolved.selector.copy(kind = ArtifactKind.Car), kind = ArtifactKind.Car)
           case (None, Some(resolved)) =>
@@ -41,7 +47,7 @@ final class ArtifactResolver {
           case (Some(_), Some(_)) =>
             throw TextusException(s"artifact is ambiguous between CAR and SAR: ${selector.display}; use --car or --sar")
           case (None, None) =>
-            throw TextusException(_not_found_message("artifact", selector))
+            throw TextusException(_not_found_message("artifact", selector, carartifact.diagnostics ++ sarartifact.diagnostics))
         }
     }
 
@@ -49,14 +55,23 @@ final class ArtifactResolver {
     selector: ArtifactSelector,
     repositories: Vector[String],
     suffix: String
-  ): Option[ResolvedArtifact] =
-    _effective_repositories(selector, repositories).view.flatMap(repo => _resolve_artifact_in_repository(selector, repo, suffix)).headOption
+  ): ArtifactResolution = {
+    val iterator = _effective_repositories(selector, repositories).iterator
+    var diagnostics = Vector.empty[String]
+    var artifact: Option[ResolvedArtifact] = None
+    while (iterator.hasNext && artifact.isEmpty) {
+      val resolution = _resolve_artifact_in_repository(selector, iterator.next(), suffix)
+      artifact = resolution.artifact
+      diagnostics ++= resolution.diagnostics
+    }
+    ArtifactResolution(artifact, diagnostics)
+  }
 
   private def _resolve_artifact_in_repository(
     selector: ArtifactSelector,
     repository: String,
     suffix: String
-  ): Option[ResolvedArtifact] =
+  ): ArtifactResolution =
     if (_is_url(repository))
       _remote_resolve_artifact(selector, repository, suffix)
     else
@@ -66,12 +81,12 @@ final class ArtifactResolver {
     selector: ArtifactSelector,
     repository: Path,
     suffix: String
-  ): Option[ResolvedArtifact] =
+  ): ArtifactResolution =
     _local_catalog_path(repository, selector.name, suffix) match {
       case Some(path) =>
-        Some(_local_catalog_artifact(selector, repository, suffix, path))
+        _local_catalog_artifact(selector, repository, suffix, path)
       case None =>
-        _local_metadata_artifact(selector, repository, suffix)
+        ArtifactResolution(_local_metadata_artifact(selector, repository, suffix))
     }
 
   private def _local_metadata_artifact(
@@ -93,12 +108,12 @@ final class ArtifactResolver {
     selector: ArtifactSelector,
     repository: String,
     suffix: String
-  ): Option[ResolvedArtifact] = {
+  ): ArtifactResolution = {
     val catalogurl = _catalog_url(repository, selector.name, suffix)
     if (_head(catalogurl))
-      Some(_remote_catalog_artifact(selector, repository, suffix, catalogurl))
+      _remote_catalog_artifact(selector, repository, suffix, catalogurl)
     else
-      _remote_metadata_artifact(selector, repository, suffix)
+      ArtifactResolution(_remote_metadata_artifact(selector, repository, suffix))
   }
 
   private def _remote_metadata_artifact(
@@ -118,16 +133,22 @@ final class ArtifactResolver {
     repository: Path,
     suffix: String,
     path: Path
-  ): ResolvedArtifact = {
+  ): ArtifactResolution = {
     val catalog = RepositoryArtifactCatalog.parse(Files.readString(path))
-    val version = catalog.resolve(selector.version).getOrElse {
-      throw TextusException(s"artifact catalog does not contain an enabled version for ${selector.display}: $path")
+    catalog.resolve(selector.version) match {
+      case Some(version) =>
+        _local_catalog_file_exists(repository, selector.name, suffix, version) match {
+          case Some(_) =>
+            val requirements = version.runtime.toVector.map(_.withSource(selector.name)) ++ _local_dependency_requirements(repository, catalog)
+            ArtifactResolution(Some(ResolvedArtifact(selector.copy(version = Some(version.version)), _kind_from_suffix(suffix), requirements)))
+          case None =>
+            ArtifactResolution(None, Vector(s"local catalog points to a missing archive: ${selector.name}:${version.version}: $path"))
+        }
+      case None if selector.version.exists(version => !catalog.versions.exists(_.version == version)) =>
+        ArtifactResolution(None, Vector(s"local catalog does not contain ${selector.display}: $path"))
+      case None =>
+        throw TextusException(s"artifact catalog does not contain an enabled version for ${selector.display}: $path")
     }
-    _local_catalog_file_exists(repository, selector.name, suffix, version).getOrElse {
-      throw TextusException(s"artifact catalog points to a missing archive: ${selector.name}:${version.version}")
-    }
-    val requirements = version.runtime.toVector.map(_.withSource(selector.name)) ++ _local_dependency_requirements(repository, catalog)
-    ResolvedArtifact(selector.copy(version = Some(version.version)), _kind_from_suffix(suffix), requirements)
   }
 
   private def _remote_catalog_artifact(
@@ -135,16 +156,22 @@ final class ArtifactResolver {
     repository: String,
     suffix: String,
     catalogurl: String
-  ): ResolvedArtifact = {
+  ): ArtifactResolution = {
     val catalog = RepositoryArtifactCatalog.parse(_remote_catalog_text_required(catalogurl))
-    val version = catalog.resolve(selector.version).getOrElse {
-      throw TextusException(s"artifact catalog does not contain an enabled version for ${selector.display}: $catalogurl")
+    catalog.resolve(selector.version) match {
+      case Some(version) =>
+        _remote_catalog_file_exists(repository, selector.name, suffix, version) match {
+          case Some(_) =>
+            val requirements = version.runtime.toVector.map(_.withSource(selector.name)) ++ _remote_dependency_requirements(repository, catalog)
+            ArtifactResolution(Some(ResolvedArtifact(selector.copy(version = Some(version.version)), _kind_from_suffix(suffix), requirements)))
+          case None =>
+            ArtifactResolution(None, Vector(s"remote catalog points to a missing archive: ${selector.name}:${version.version}: $catalogurl"))
+        }
+      case None if selector.version.exists(version => !catalog.versions.exists(_.version == version)) =>
+        ArtifactResolution(None, Vector(s"remote catalog does not contain ${selector.display}: $catalogurl"))
+      case None =>
+        throw TextusException(s"artifact catalog does not contain an enabled version for ${selector.display}: $catalogurl")
     }
-    _remote_catalog_file_exists(repository, selector.name, suffix, version).getOrElse {
-      throw TextusException(s"artifact catalog points to a missing archive: ${selector.name}:${version.version}")
-    }
-    val requirements = version.runtime.toVector.map(_.withSource(selector.name)) ++ _remote_dependency_requirements(repository, catalog)
-    ResolvedArtifact(selector.copy(version = Some(version.version)), _kind_from_suffix(suffix), requirements)
   }
 
   private def _local_versions(root: Path): Vector[String] =
@@ -221,9 +248,10 @@ final class ArtifactResolver {
 
   private def _not_found_message(
     kind: String,
-    selector: ArtifactSelector
-  ): String =
-    selector.version match {
+    selector: ArtifactSelector,
+    diagnostics: Vector[String] = Vector.empty
+  ): String = {
+    val message = selector.version match {
       case Some(version) if _is_snapshot_version(version) =>
         s"snapshot component not found locally: ${selector.display}; run sbt cozyPublishLocalCar"
       case _ =>
@@ -232,6 +260,8 @@ final class ArtifactResolver {
         else
           s"${kind} artifact not found in repositories: ${selector.display}"
     }
+    if (diagnostics.isEmpty) message else s"$message; ${diagnostics.mkString("; ")}"
+  }
 
   private def _kind_from_suffix(suffix: String): ArtifactKind =
     if (suffix == ".sar") ArtifactKind.Sar else ArtifactKind.Car

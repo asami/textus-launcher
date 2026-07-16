@@ -360,13 +360,15 @@ object TextusCommandParser {
       |  artifact@version remains accepted as a legacy spelling.
       |
       |Runtime:
+      |  Config launcher.dev-dir delegates the installed launcher to a Textus launcher development checkout.
+      |  Run sbt textusExportLauncherClasspath in that checkout before enabling launcher.dev-dir.
       |  --runtime <version> overrides .textus/version and ~/.textus/version.
       |  --runtime-dev-dir <dir> runs a CNCF runtime from a development checkout.
       |  Config runtime.dev-dir is the configuration equivalent of --runtime-dev-dir.
       |  development.runtime.dev-dir is activated by TEXTUS_USE_DEVELOPMENT=true.
       |  TEXTUS_RUNTIME_DEV_DIR or CNCF_RUNTIME_DEV_DIR overrides the active runtime development checkout.
       |  --config <file> loads an additional Textus launcher config file.
-      |  Textus launcher config loads from ~/.textus/config.yaml, ancestor .textus/config.yaml files, then cwd .textus/config.yaml.
+      |  Textus launcher config loads from ~/.textus/config.yaml and ~/.textus/launcher.yaml, then ancestor and cwd .textus config/launcher files.
       |  Textus launcher config supports yaml/yml, properties/props, and lightweight conf files.
       |  JSON, XML, and full HOCON are runtime/application config formats, not launcher config formats.
       |  Without --runtime, component runtime.cncf requirements use current-compatible selection by default.

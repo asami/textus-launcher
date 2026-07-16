@@ -8,18 +8,25 @@ import scala.sys.process.*
 /*
  * @since   May. 17, 2026
  *  version May. 27, 2026
- * @version Jun. 29, 2026
+ *  version Jun. 29, 2026
+ * @version Jul. 16, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
   paths: LauncherPaths = LauncherPaths(),
   runtimeresolver: CncfRuntimeResolver = CoursierCncfRuntimeResolver(),
   cncfinvoker: CncfInvoker = CncfInvoker(),
-  classpathexporter: RuntimeClasspathExporter = SbtRuntimeClasspathExporter
+  classpathexporter: RuntimeClasspathExporter = SbtRuntimeClasspathExporter,
+  launcherdevinvoker: TextusLauncherDevInvoker = TextusLauncherDevInvoker.System,
+  environment: Map[String, String] = sys.env
 ) {
   def run(args: Vector[String]): Int = {
     val (configfiles, commandargs) = _take_config_options(args)
-    val config = LauncherConfig.load(paths, configfiles)
+    val config = LauncherConfig.load(paths, configfiles, environment)
+    _delegate_launcher_dev_dir(config, args) match {
+      case Some(code) => return code
+      case None => ()
+    }
     val command = TextusCommandParser.parse(commandargs)
     command match {
       case TextusCommand.LauncherVersion =>
@@ -42,6 +49,18 @@ final class TextusLauncher(
         _run_execute(execute, config)
     }
   }
+
+  private def _delegate_launcher_dev_dir(
+    config: LauncherConfig,
+    args: Vector[String]
+  ): Option[Int] =
+    if (environment.get("TEXTUS_LAUNCHER_DEV_DELEGATED").contains("1"))
+      None
+    else
+      config.launcherDevDir.map { dir =>
+        val path = paths.cwd.resolve(dir).normalize.toAbsolutePath.normalize
+        launcherdevinvoker.invoke(path, args, paths.cwd.toAbsolutePath.normalize)
+      }
 
   private def _run_install_cli(
     command: TextusCommand.InstallCli,

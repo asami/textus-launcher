@@ -1,14 +1,18 @@
 package textus.launcher
 
+import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
+import java.net.InetSocketAddress
 import org.scalatest.GivenWhenThen
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
+import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
 
 /*
  * @since   May. 17, 2026
  *  version May. 27, 2026
- * @version Jun. 29, 2026
+ *  version Jun. 29, 2026
+ * @version Jul. 16, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -23,10 +27,14 @@ object TextusLauncherSpec {
     spec.configMerge()
     spec.workspaceRootConfigAppliesToNestedCwd()
     spec.launcherConfigSupportsPropertiesAndConfFiles()
+    spec.launcherDevDirDelegatesToDevelopmentLauncher()
+    spec.launcherDevDirRejectsStaleDevelopmentClasspath()
     spec.runtimeVersionPrecedence()
     spec.runtimeUseWritesExpectedFiles()
     spec.runtimeUseAutoSelectsProjectWhenTextusDirectoryExists()
     spec.installCliWritesUserFacingCommand()
+    spec.installCliFallsBackFromStaleLocalCatalogToRemoteCar()
+    spec.missingLocalAndRemoteCatalogArchivesReportBothDiagnostics()
     spec.runtimeCatalogParseAndSelectorResolution()
     spec.runtimeCatalogCommands()
     spec.runtimeCurrentWarnsWhenCachedRecommendedIsStale()
@@ -97,6 +105,20 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
         launcherConfigSupportsPropertiesAndConfFiles()
       }
 
+      "launcher dev dir delegates to development launcher" in {
+        Given("a global Textus launcher config selects a development launcher checkout")
+        When("the launcher command is run")
+        Then("the configured checkout receives the original command arguments")
+        launcherDevDirDelegatesToDevelopmentLauncher()
+      }
+
+      "launcher dev dir rejects stale development classpath" in {
+        Given("a Textus development launcher classpath without the Textus main class")
+        When("the launcher tries to delegate")
+        Then("the stale classpath is rejected before starting a process")
+        launcherDevDirRejectsStaleDevelopmentClasspath()
+      }
+
       "runtime development config" in {
         Given("a Textus launcher config declares a development CNCF runtime checkout")
         When("development mode or environment override is supplied")
@@ -154,6 +176,20 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
         When("the launcher installs a domain command")
         Then("the command delegates to textus command with file parameter expansion")
         installCliWritesUserFacingCommand()
+      }
+
+      "install cli falls back from stale local catalog to remote CAR" in {
+        Given("a stale local CAR catalog whose archive is missing")
+        When("the launcher installs a command for a published CAR available remotely")
+        Then("the command wrapper is generated from the remote CAR version")
+        installCliFallsBackFromStaleLocalCatalogToRemoteCar()
+      }
+
+      "missing local and remote catalog archives report both diagnostics" in {
+        Given("local and remote catalogs whose selected archives are both missing")
+        When("the resolver cannot locate the requested CAR")
+        Then("the error identifies both failed catalog sources")
+        missingLocalAndRemoteCatalogArchivesReportBothDiagnostics()
       }
 
       "runtime catalog commands" in {
@@ -383,11 +419,14 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     help.contains("Snapshot components are local-only") shouldBe true
     help.contains("yaml/yml, properties/props, and lightweight conf") shouldBe true
     help.contains("--runtime-dev-dir <dir>") shouldBe true
+    help.contains("Config launcher.dev-dir delegates the installed launcher") shouldBe true
+    help.contains("sbt textusExportLauncherClasspath") shouldBe true
     help.contains("runtime.dev-dir is the configuration equivalent of --runtime-dev-dir") shouldBe true
     help.contains("development.runtime.dev-dir") shouldBe true
     help.contains("TEXTUS_USE_DEVELOPMENT=true") shouldBe true
     help.contains("TEXTUS_RUNTIME_DEV_DIR") shouldBe true
-    help.contains("ancestor .textus/config.yaml") shouldBe true
+    help.contains("ancestor and cwd .textus config/launcher files") shouldBe true
+    help.contains("~/.textus/launcher.yaml") shouldBe true
     help.contains("Install CLI:") shouldBe true
     help.contains("--file-param <name> reads existing file values") shouldBe true
   }
@@ -566,6 +605,41 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     _assert_equals(resolver.resolvedVersions, Vector("0.2.0"))
   }
 
+  def launcherDevDirDelegatesToDevelopmentLauncher(): Unit = _with_temp_paths { paths =>
+    val launcherdevdir = paths.cwd.resolve("launcher-textus")
+    Files.createDirectories(launcherdevdir)
+    _write(paths.textusHome.resolve("launcher.yaml"),
+      s"""textus:
+         |  launcher:
+         |    dev:
+         |      dir: $launcherdevdir
+         |""".stripMargin)
+    val invoker = FakeTextusLauncherDevInvoker()
+    val launcher = new TextusLauncher(paths, FakeResolver(), FakeInvoker(), SbtRuntimeClasspathExporter, invoker)
+
+    val code = launcher.run(Vector("launcher", "version"))
+
+    _assert_equals(code, 0)
+    _assert_equals(invoker.devDir, Some(launcherdevdir.toAbsolutePath.normalize))
+    _assert_equals(invoker.args, Vector("launcher", "version"))
+    _assert_equals(invoker.cwd, Some(paths.cwd.toAbsolutePath.normalize))
+  }
+
+  def launcherDevDirRejectsStaleDevelopmentClasspath(): Unit = _with_temp_paths { paths =>
+    val launcherdevdir = paths.cwd.resolve("launcher-textus")
+    val staleclassdir = paths.cwd.resolve("stale-textus-runtime-classes")
+    Files.createDirectories(launcherdevdir)
+    Files.createDirectories(staleclassdir)
+    _write(launcherdevdir.resolve("target").resolve("textus.d").resolve("runtime-classpath.txt"), staleclassdir.toString)
+
+    val e = intercept[TextusException] {
+      TextusLauncherDevInvoker.System.invoke(launcherdevdir, Vector("launcher", "version"), paths.cwd)
+    }
+
+    e.getMessage.contains("does not contain textus.launcher.TextusMain") shouldBe true
+    e.getMessage.contains("run sbt textusExportLauncherClasspath") shouldBe true
+  }
+
   def runtimeVersionPrecedence(): Unit = _with_temp_paths { paths =>
     val store = RuntimeVersionStore(paths)
     val config = LauncherConfig(runtimeVersion = Some("0.1.0"))
@@ -626,6 +700,63 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     script.contains("presentation-dsl") shouldBe true
     script.contains("exec textus --config \"$launcher_config\" \"${textus_args[@]}\" \"$artifact\" command \"$selector\"") shouldBe true
     Files.isExecutable(bindir.resolve("sanpomap")) shouldBe true
+  }
+
+  def installCliFallsBackFromStaleLocalCatalogToRemoteCar(): Unit = _with_temp_paths { paths =>
+    val bindir = paths.cwd.resolve("bin")
+    _write(paths.localRepository.resolve("repository").resolve("catalog").resolve("car").resolve("textus-sanpomap.yaml"),
+      _sanpomap_catalog_text("0.1.0"))
+    _with_http_repository(Map(
+      "/repository/catalog/car/textus-sanpomap.yaml" -> _sanpomap_catalog_text("0.2.0"),
+      "/repository/car/textus-sanpomap/0.2.0/textus-sanpomap-0.2.0.car" -> "car"
+    )) { repository =>
+      _write(paths.cwd.resolve("runtime-catalog.yaml"), _catalog_text)
+      _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
+        s"""runtime:
+           |  version: 0.2.0
+           |  catalog:
+           |    url: ${paths.cwd.resolve("runtime-catalog.yaml")}
+           |repositories:
+           |  car:
+           |    - $repository
+           |""".stripMargin)
+      val launcher = new TextusLauncher(paths, FakeResolver(), FakeInvoker())
+
+      val code = launcher.run(Vector(
+        "install-cli",
+        "sanpomap",
+        "textus-sanpomap:0.2.0",
+        "--operation-prefix",
+        "sanpomap.presentation",
+        "--bin-dir",
+        bindir.toString,
+        "--overwrite"
+      ))
+
+      _assert_equals(code, 0)
+      Files.readString(bindir.resolve("sanpomap")).contains("artifact='textus-sanpomap:0.2.0'") shouldBe true
+    }
+  }
+
+  def missingLocalAndRemoteCatalogArchivesReportBothDiagnostics(): Unit = _with_temp_paths { paths =>
+    _write(paths.localRepository.resolve("repository").resolve("catalog").resolve("car").resolve("textus-missing.yaml"),
+      _missing_catalog_text("0.2.0"))
+    _with_http_repository(Map(
+      "/repository/catalog/car/textus-missing.yaml" -> _missing_catalog_text("0.2.0")
+    )) { repository =>
+      val config = LauncherConfig(carRepositories = Vector(paths.localCarRepository.toString, repository))
+      val failed =
+        try {
+          ArtifactResolver().resolve(ArtifactSelector("textus-missing", Some("0.2.0"), ArtifactKind.Car), config)
+          false
+        } catch {
+          case e: TextusException =>
+            e.getMessage.contains("local catalog points to a missing archive") &&
+              e.getMessage.contains("remote catalog points to a missing archive")
+        }
+
+      failed shouldBe true
+    }
   }
 
   def runtimeCatalogParseAndSelectorResolution(): Unit = {
@@ -1078,6 +1209,27 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     Files.writeString(path, value)
   }
 
+  private def _with_http_repository(files: Map[String, String])(f: String => Unit): Unit = {
+    val server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0)
+    server.createContext("/", new HttpHandler {
+      override def handle(exchange: HttpExchange): Unit = {
+        files.get(exchange.getRequestURI.getPath) match {
+          case Some(content) =>
+            val bytes = content.getBytes(StandardCharsets.UTF_8)
+            exchange.sendResponseHeaders(200, if (exchange.getRequestMethod == "HEAD") -1 else bytes.length)
+            if (exchange.getRequestMethod != "HEAD")
+              exchange.getResponseBody.write(bytes)
+          case None =>
+            exchange.sendResponseHeaders(404, -1)
+        }
+        exchange.close()
+      }
+    })
+    server.start()
+    try f(s"http://127.0.0.1:${server.getAddress.getPort}/repository/car")
+    finally server.stop(0)
+  }
+
   private def _assert_equals[A](actual: A, expected: A): Unit =
     actual shouldBe expected
 
@@ -1138,6 +1290,32 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
        |        tested:
        |${tested.map(v => s"          - $v").mkString("\n")}
        |""".stripMargin
+
+  private def _sanpomap_catalog_text(version: String): String =
+    s"""schemaVersion: 1
+       |kind: car
+       |artifactId: textus-sanpomap
+       |recommended: $version
+       |latestStable: $version
+       |versions:
+       |  - version: $version
+       |    channel: stable
+       |    status: active
+       |    file: repository/car/textus-sanpomap/$version/textus-sanpomap-$version.car
+       |""".stripMargin
+
+  private def _missing_catalog_text(version: String): String =
+    s"""schemaVersion: 1
+       |kind: car
+       |artifactId: textus-missing
+       |recommended: $version
+       |latestStable: $version
+       |versions:
+       |  - version: $version
+       |    channel: stable
+       |    status: active
+       |    file: repository/car/textus-missing/$version/textus-missing-$version.car
+       |""".stripMargin
 }
 
 final class FakeResolver extends CncfRuntimeResolver {
@@ -1156,6 +1334,23 @@ final class FakeResolver extends CncfRuntimeResolver {
 
 object FakeResolver {
   def apply(): FakeResolver = new FakeResolver()
+}
+
+final class FakeTextusLauncherDevInvoker extends TextusLauncherDevInvoker {
+  var devDir: Option[Path] = None
+  var args: Vector[String] = Vector.empty
+  var cwd: Option[Path] = None
+
+  override def invoke(value: Path, commandargs: Vector[String], valuecwd: Path): Int = {
+    devDir = Some(value)
+    args = commandargs
+    cwd = Some(valuecwd)
+    0
+  }
+}
+
+object FakeTextusLauncherDevInvoker {
+  def apply(): FakeTextusLauncherDevInvoker = new FakeTextusLauncherDevInvoker()
 }
 
 final class FakeClasspathExporter(classpath: String) extends RuntimeClasspathExporter {

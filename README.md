@@ -15,8 +15,11 @@ The launcher resolves a selected CNCF runtime and invokes
 configuration is read from:
 
 - `~/.textus/config.yaml`
+- `~/.textus/launcher.yaml`
 - ancestor `.textus/config.yaml` files, outermost first
+- ancestor `.textus/launcher.yaml` files, outermost first
 - `$PWD/.textus/config.yaml`
+- `$PWD/.textus/launcher.yaml`
 
 Runtime cache and resolved classpath metadata are kept under `~/.cncf`.
 Runtime version selection is driven by the Textus runtime catalog in the
@@ -61,8 +64,9 @@ accepted, so `presentationDsl` also accepts `--presentation-dsl`.
 `textus` reads standard launcher configuration files:
 
 1. `~/.textus/config.yaml`
-2. ancestor `.textus/config.yaml` files, outermost first
-3. `$PWD/.textus/config.yaml`
+2. `~/.textus/launcher.yaml`
+3. ancestor `.textus/config.yaml` and `.textus/launcher.yaml` files, outermost first
+4. `$PWD/.textus/config.yaml` and `$PWD/.textus/launcher.yaml`
 
 The current directory file overrides inherited ancestor and home files. Use `--config <file>` for
 an additional Textus launcher config file. Command-line options override both
@@ -121,6 +125,28 @@ developer launcher uses `.cncf/launcher.yaml`, not `.cncf/config.yaml`.
 runtime after the launcher starts it, depending on runtime configuration
 resolution. `project.yaml` describes artifact metadata and runtime
 compatibility.
+
+### Launcher development
+
+Use `~/.textus/launcher.yaml` to make the installed Textus launcher delegate
+to a local `textus-launcher` checkout:
+
+```yaml
+launcher:
+  dev-dir: /Users/me/src/textus-launcher
+```
+
+Build its development classpath before invoking `textus`:
+
+```bash
+cd /Users/me/src/textus-launcher
+sbt textusExportLauncherClasspath
+```
+
+The installed launcher starts `textus.launcher.TextusMain` from that classpath
+and forwards the original arguments. The delegated process sets an internal
+loop-prevention flag, so it does not delegate again. Remove `launcher.dev-dir`
+to resume the published launcher.
 
 ## Runtime Management
 

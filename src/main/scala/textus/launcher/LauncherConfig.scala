@@ -6,10 +6,12 @@ import org.goldenport.launcher.{LauncherConfigLoader => CoreLauncherConfigLoader
 
 /*
  * @since   May. 17, 2026
- * @version Jun. 29, 2026
+ *  version Jun. 29, 2026
+ * @version Jul. 16, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class LauncherConfig(
+  launcherDevDir: Option[String] = None,
   runtimeVersion: Option[String] = None,
   runtimeDevDir: Option[String] = None,
   developmentRuntimeDevDir: Option[String] = None,
@@ -23,6 +25,7 @@ final case class LauncherConfig(
 ) {
   def mergeHigher(higher: LauncherConfig): LauncherConfig =
     LauncherConfig(
+      launcherDevDir = higher.launcherDevDir.orElse(launcherDevDir),
       runtimeVersion = higher.runtimeVersion.orElse(runtimeVersion),
       runtimeDevDir = higher.runtimeDevDir.orElse(runtimeDevDir),
       developmentRuntimeDevDir = higher.developmentRuntimeDevDir.orElse(developmentRuntimeDevDir),
@@ -105,7 +108,18 @@ object LauncherConfig {
   val DEFAULT_SAR_REPOSITORIES = Vector("https://www.simplemodeling.org/repository/sar")
   val DEFAULT_MAVEN_REPOSITORIES = Vector("https://www.simplemodeling.org/repository/maven")
 
-  private val _product_spec = LauncherProductSpec.textusConfig
+  private val _product_spec = LauncherProductSpec(
+    productName = "textus",
+    envPrefix = "TEXTUS",
+    globalConfigCandidates = paths => Vector(
+      paths.home.resolve(".textus").resolve("config.yaml"),
+      paths.home.resolve(".textus").resolve("launcher.yaml")
+    ),
+    workspaceConfigCandidates = dir => Vector(
+      dir.resolve(".textus").resolve("config.yaml"),
+      dir.resolve(".textus").resolve("launcher.yaml")
+    )
+  )
 
   def load(paths: LauncherPaths): LauncherConfig =
     load(paths, Vector.empty)
@@ -159,6 +173,7 @@ object LauncherConfig {
       keys.toVector.flatMap(k => values.getOrElse(k, Vector.empty)).map(_.trim).filter(_.nonEmpty).distinct
 
     LauncherConfig(
+      launcherDevDir = _first_("textus.launcher.dev.dir", "textus.launcher.dev-dir", "textus.launcher.devDir", "launcher.dev.dir", "launcher.dev-dir", "launcher.devDir"),
       runtimeVersion = _first_("runtime.version", "textus.runtime.version", "version"),
       runtimeDevDir = _first_("runtime.dev-dir", "runtime.dev_dir", "textus.runtime.dev-dir", "textus.runtime.dev_dir", "runtime.devDir", "runtime.dev.dir", "textus.runtime.devDir", "textus.runtime.dev.dir"),
       developmentRuntimeDevDir = _first_("development.runtime.dev-dir", "development.runtime.dev_dir", "development.runtime.devDir", "development.runtime.dev.dir", "textus.development.runtime.dev-dir", "textus.development.runtime.dev_dir", "textus.development.runtime.devDir", "textus.development.runtime.dev.dir"),
@@ -203,6 +218,7 @@ object LauncherConfig {
       else
         config.normalizedWithDefaults
     val runtime = c.runtimeVersion.getOrElse("(not configured)")
+    val launcherdevdir = c.launcherDevDir.getOrElse("(not configured)")
     val catalog = c.runtimeCatalogUrl.getOrElse("(not configured)")
     val selection = c.runtimeSelectionPolicy.map(RuntimeSelectionPolicy.render).getOrElse("current-compatible")
     val nocompatible = c.runtimeNoCompatiblePolicy.map(RuntimeNoCompatiblePolicy.render).getOrElse("error")
@@ -218,7 +234,8 @@ object LauncherConfig {
       c.carRepositories.find(_.contains("/.cncf/cache/car")).
         map(_.stripSuffix("/car")).
         getOrElse("~/.cncf/cache")
-    s"""runtime.version: $runtime
+    s"""launcher.dev-dir: $launcherdevdir
+       |runtime.version: $runtime
        |runtime.catalog.url: $catalog
        |runtime.cncf.selectionPolicy: $selection
        |runtime.cncf.noCompatiblePolicy: $nocompatible
