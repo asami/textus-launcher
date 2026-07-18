@@ -990,6 +990,7 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       requests.map(_._1).exists(_.contains("deregister-subsystem")) shouldBe true
       requests.forall(_._2 == "Bearer test-token") shouldBe true
       requests.forall { case (path, _) => path.contains("instanceId=textus-registration-http-spec") } shouldBe true
+      requests.forall { case (path, _) => path.contains("?protocolVersion=1&instanceId=") } shouldBe true
     } finally {
       server.stop(0)
     }

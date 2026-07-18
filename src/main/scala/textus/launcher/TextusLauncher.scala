@@ -337,9 +337,15 @@ final class TextusLauncher(
       case None => runtimeresolver.resolve(runtimeversion, effectiveconfig, paths)
     }
     val session = _registration_session(command, resolved, runtimeversion, effectiveconfig)
+    val shutdownhook = new Thread(
+      () => session.close(),
+      "textus-admin-registration-shutdown"
+    )
+    Runtime.getRuntime.addShutdownHook(shutdownhook)
     try {
       cncfinvoker.invoke(classpath, cncfargs)
     } finally {
+      scala.util.Try(Runtime.getRuntime.removeShutdownHook(shutdownhook))
       session.close()
     }
   }
