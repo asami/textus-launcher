@@ -12,7 +12,7 @@ import java.nio.file.{Files, Path}
  * @since   May. 17, 2026
  *  version May. 27, 2026
  *  version Jun. 29, 2026
- * @version Jul. 16, 2026
+ * @version Jul. 18, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -39,6 +39,8 @@ object TextusLauncherSpec {
     spec.runtimeCatalogCommands()
     spec.runtimeCurrentWarnsWhenCachedRecommendedIsStale()
     spec.executionRewritesToCncfArgs()
+    spec.textusAdminRegistrationLifecycle()
+    spec.textusAdminRegistrationHttpLifecycle()
     spec.localRepositoryResolvesArtifactWithoutConfig()
     spec.snapshotArtifactDoesNotFallThroughToCacheOrPublic()
     spec.artifactCatalogUsesCurrentCompatibleRuntimeByDefault()
@@ -879,6 +881,120 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     ))
   }
 
+  def textusAdminRegistrationLifecycle(): Unit = _with_temp_paths { paths =>
+    Given("a Textus server launcher with opt-in Textus Admin registration")
+    val carrepo = paths.cwd.resolve("repo").resolve("car")
+    _write(carrepo.resolve("textus-registration").resolve("0.1.0").resolve("textus-registration-0.1.0.car"), "")
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
+      s"""repositories:
+         |  car:
+         |    - $carrepo
+         |textus-admin:
+         |  registration:
+         |    enabled: true
+         |    endpoint: https://admin.example.test/rest/v1/textus-admin/subsystem-inventory
+         |    token-env: TEXTUS_ADMIN_REGISTRATION_TOKEN
+         |    timeout: 2s
+         |    heartbeat-interval: 30s
+         |    host-label: acceptance
+         |    base-url: https://subsystem.example.test
+         |""".stripMargin)
+    val reporter = FakeTextusAdminRegistrationReporter()
+    val invoker = FakeInvoker()
+    val launcher = new TextusLauncher(
+      paths,
+      FakeResolver(),
+      invoker,
+      environment = Map("TEXTUS_ADMIN_REGISTRATION_TOKEN" -> "secret-token"),
+      registrationreporter = reporter
+    )
+
+    When("the canonical target-first server command completes")
+    val code = launcher.run(Vector("textus-registration", "server"))
+
+    Then("one Textus-owned registration lifecycle surrounds the runtime invocation without exposing the token")
+    _assert_equals(code, 0)
+    _assert_equals(reporter.starts.size, 1)
+    _assert_equals(reporter.closes, 1)
+    _assert_equals(reporter.starts.head._1.target, "textus-registration")
+    _assert_equals(reporter.starts.head._1.subsystemVersion, Some("0.1.0"))
+    _assert_equals(reporter.starts.head._2, Some("secret-token"))
+    invoker.lastArgs.last shouldBe "server"
+
+    And("a higher-priority explicit disable suppresses inherited registration")
+    val inherited = LauncherConfig(
+      textusAdminRegistration = Some(TextusAdminRegistrationConfig(
+        endpoint = "https://admin.example.test/rest/v1/textus-admin/subsystem-inventory",
+        tokenEnv = "TEXTUS_ADMIN_REGISTRATION_TOKEN",
+        timeout = java.time.Duration.ofSeconds(2),
+        heartbeatInterval = java.time.Duration.ofSeconds(30),
+        hostLabel = "acceptance",
+        baseUrl = "https://subsystem.example.test"
+      )),
+      textusAdminRegistrationEnabled = Some(true)
+    )
+    val disabled = LauncherConfig(textusAdminRegistrationEnabled = Some(false))
+    inherited.mergeHigher(disabled).textusAdminRegistration shouldBe None
+
+    And("registration setup failures do not prevent server startup")
+    val unavailable = new ThrowingTextusAdminRegistrationReporter
+    val outageinvoker = FakeInvoker()
+    val outagelauncher = new TextusLauncher(
+      paths,
+      FakeResolver(),
+      outageinvoker,
+      environment = Map("TEXTUS_ADMIN_REGISTRATION_TOKEN" -> "secret-token"),
+      registrationreporter = unavailable
+    )
+    val outagecode = outagelauncher.run(Vector("textus-registration", "server"))
+    _assert_equals(outagecode, 0)
+    outageinvoker.lastArgs.last shouldBe "server"
+  }
+
+  def textusAdminRegistrationHttpLifecycle(): Unit = {
+    Given("a reachable Textus Admin automatic REST endpoint")
+    val requests = scala.collection.mutable.ArrayBuffer.empty[(String, String)]
+    val server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0)
+    server.createContext("/", new HttpHandler {
+      override def handle(exchange: HttpExchange): Unit = {
+        requests += exchange.getRequestURI.toString -> exchange.getRequestHeaders.getFirst("Authorization")
+        exchange.sendResponseHeaders(204, -1)
+        exchange.close()
+      }
+    })
+    server.start()
+    try {
+      val config = TextusAdminRegistrationConfig(
+        endpoint = s"http://127.0.0.1:${server.getAddress.getPort}/rest/v1/textus-admin/subsystem-inventory",
+        tokenEnv = "TEXTUS_ADMIN_REGISTRATION_TOKEN",
+        timeout = java.time.Duration.ofSeconds(1),
+        heartbeatInterval = java.time.Duration.ofSeconds(30),
+        hostLabel = "acceptance",
+        baseUrl = "https://subsystem.example.test"
+      )
+      val report = TextusAdminRegistrationReport(
+        instanceId = "textus-registration-http-spec",
+        target = "textus-registration",
+        subsystemName = Some("textus-registration"),
+        subsystemVersion = Some("0.1.0"),
+        runtimeVersion = "0.5.0",
+        startedAt = java.time.Instant.parse("2026-07-18T00:00:00Z")
+      )
+
+      When("the reporter starts and closes one server registration session")
+      val session = TextusAdminRegistrationReporter.System.start(config, report, Some("test-token"))
+      session.close()
+
+      Then("it sends register and deregister operations with the configured bearer credential")
+      requests.map(_._1).exists(_.contains("register-subsystem")) shouldBe true
+      requests.map(_._1).exists(_.contains("deregister-subsystem")) shouldBe true
+      requests.forall(_._2 == "Bearer test-token") shouldBe true
+      requests.forall { case (path, _) => path.contains("instanceId=textus-registration-http-spec") } shouldBe true
+    } finally {
+      server.stop(0)
+    }
+  }
+
   def localRepositoryResolvesArtifactWithoutConfig(): Unit = _with_temp_paths { paths =>
     _write(paths.localCarRepository.resolve("textus-local").resolve("maven-metadata.xml"),
       """<metadata>
@@ -1374,6 +1490,35 @@ final class FakeInvoker extends CncfInvoker {
     lastArgs = args
     0
   }
+}
+
+final class FakeTextusAdminRegistrationReporter extends TextusAdminRegistrationReporter {
+  var starts: Vector[(TextusAdminRegistrationReport, Option[String])] = Vector.empty
+  var closes: Int = 0
+
+  def start(
+    config: TextusAdminRegistrationConfig,
+    report: TextusAdminRegistrationReport,
+    token: Option[String]
+  ): TextusAdminRegistrationSession = {
+    starts :+= report -> token
+    new TextusAdminRegistrationSession {
+      def close(): Unit = closes += 1
+    }
+  }
+}
+
+object FakeTextusAdminRegistrationReporter {
+  def apply(): FakeTextusAdminRegistrationReporter = new FakeTextusAdminRegistrationReporter()
+}
+
+final class ThrowingTextusAdminRegistrationReporter extends TextusAdminRegistrationReporter {
+  def start(
+    config: TextusAdminRegistrationConfig,
+    report: TextusAdminRegistrationReport,
+    token: Option[String]
+  ): TextusAdminRegistrationSession =
+    throw TextusException("simulated Textus Admin outage")
 }
 
 object FakeInvoker {

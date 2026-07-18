@@ -7,7 +7,7 @@ import org.goldenport.launcher.{LauncherConfigLoader => CoreLauncherConfigLoader
 /*
  * @since   May. 17, 2026
  *  version Jun. 29, 2026
- * @version Jul. 16, 2026
+ * @version Jul. 18, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class LauncherConfig(
@@ -18,6 +18,8 @@ final case class LauncherConfig(
   runtimeCatalogUrl: Option[String] = None,
   runtimeSelectionPolicy: Option[RuntimeSelectionPolicy] = None,
   runtimeNoCompatiblePolicy: Option[RuntimeNoCompatiblePolicy] = None,
+  textusAdminRegistration: Option[TextusAdminRegistrationConfig] = None,
+  textusAdminRegistrationEnabled: Option[Boolean] = None,
   carRepositories: Vector[String] = Vector.empty,
   sarRepositories: Vector[String] = Vector.empty,
   mavenRepositories: Vector[String] = Vector.empty,
@@ -32,6 +34,11 @@ final case class LauncherConfig(
       runtimeCatalogUrl = higher.runtimeCatalogUrl.orElse(runtimeCatalogUrl),
       runtimeSelectionPolicy = higher.runtimeSelectionPolicy.orElse(runtimeSelectionPolicy),
       runtimeNoCompatiblePolicy = higher.runtimeNoCompatiblePolicy.orElse(runtimeNoCompatiblePolicy),
+      textusAdminRegistration = higher.textusAdminRegistrationEnabled match {
+        case Some(false) => None
+        case _ => higher.textusAdminRegistration.orElse(textusAdminRegistration)
+      },
+      textusAdminRegistrationEnabled = higher.textusAdminRegistrationEnabled.orElse(textusAdminRegistrationEnabled),
       carRepositories = _merge_list(carRepositories, higher.carRepositories),
       sarRepositories = _merge_list(sarRepositories, higher.sarRepositories),
       mavenRepositories = _merge_list(mavenRepositories, higher.mavenRepositories),
@@ -182,6 +189,8 @@ object LauncherConfig {
         map(RuntimeSelectionPolicy.parse),
       runtimeNoCompatiblePolicy = _first_("runtime.cncf.no-compatible-policy", "runtime.cncf.no_compatible_policy", "runtime.cncf.noCompatiblePolicy", "textus.runtime.cncf.no-compatible-policy", "textus.runtime.cncf.no_compatible_policy", "textus.runtime.cncf.noCompatiblePolicy").
         map(RuntimeNoCompatiblePolicy.parse),
+      textusAdminRegistration = TextusAdminRegistrationConfig.fromParsed(values),
+      textusAdminRegistrationEnabled = TextusAdminRegistrationConfig.enabled(values),
       carRepositories = _all_("repositories.car", "componentRepositories.car", "textus.repository.car", "textus.component.repository.car"),
       sarRepositories = _all_("repositories.sar", "componentRepositories.sar", "textus.repository.sar", "textus.subsystem.repository.sar"),
       mavenRepositories = _all_("repositories.maven", "textus.repository.maven"),

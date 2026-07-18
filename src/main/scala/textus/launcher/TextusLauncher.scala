@@ -9,7 +9,7 @@ import scala.sys.process.*
  * @since   May. 17, 2026
  *  version May. 27, 2026
  *  version Jun. 29, 2026
- * @version Jul. 16, 2026
+ * @version Jul. 18, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
@@ -18,7 +18,8 @@ final class TextusLauncher(
   cncfinvoker: CncfInvoker = CncfInvoker(),
   classpathexporter: RuntimeClasspathExporter = SbtRuntimeClasspathExporter,
   launcherdevinvoker: TextusLauncherDevInvoker = TextusLauncherDevInvoker.System,
-  environment: Map[String, String] = sys.env
+  environment: Map[String, String] = sys.env,
+  registrationreporter: TextusAdminRegistrationReporter = TextusAdminRegistrationReporter.System
 ) {
   def run(args: Vector[String]): Int = {
     val (configfiles, commandargs) = _take_config_options(args)
@@ -335,8 +336,46 @@ final class TextusLauncher(
       case Some(dir) => _development_runtime_classpath(paths.cwd.resolve(dir).normalize.toAbsolutePath.normalize)
       case None => runtimeresolver.resolve(runtimeversion, effectiveconfig, paths)
     }
-    cncfinvoker.invoke(classpath, cncfargs)
+    val session = _registration_session(command, resolved, runtimeversion, effectiveconfig)
+    try {
+      cncfinvoker.invoke(classpath, cncfargs)
+    } finally {
+      session.close()
+    }
   }
+
+  private def _registration_session(
+    command: TextusCommand.Execute,
+    artifact: ResolvedArtifact,
+    runtimeversion: String,
+    config: LauncherConfig
+  ): TextusAdminRegistrationSession =
+    if (command.mode != "server") {
+      TextusAdminRegistrationSession.noop
+    } else {
+      config.textusAdminRegistration match {
+        case Some(registration) =>
+          try {
+            registrationreporter.start(
+              registration,
+              TextusAdminRegistrationReport(
+                instanceId = java.util.UUID.randomUUID().toString,
+                target = artifact.selector.name,
+                subsystemName = Some(artifact.selector.name),
+                subsystemVersion = artifact.selector.version,
+                runtimeVersion = runtimeversion,
+                startedAt = java.time.Instant.now()
+              ),
+              environment.get(registration.tokenEnv)
+            )
+          } catch {
+            case _: Throwable =>
+              Console.err.println("warning: Textus Admin registration setup failed; continuing server startup.")
+              TextusAdminRegistrationSession.noop
+          }
+        case None => TextusAdminRegistrationSession.noop
+      }
+    }
 
   private def _cncf_args(
     command: TextusCommand.Execute,
