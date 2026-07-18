@@ -39,8 +39,9 @@ object TextusLauncherSpec {
     spec.runtimeCatalogCommands()
     spec.runtimeCurrentWarnsWhenCachedRecommendedIsStale()
     spec.executionRewritesToCncfArgs()
-    spec.textusAdminRegistrationLifecycle()
-    spec.textusAdminRegistrationHttpLifecycle()
+    spec.serverExecutionDelegatesDefaultPortResolutionToRuntime()
+    spec.textusControlCenterRegistrationLifecycle()
+    spec.textusControlCenterRegistrationHttpLifecycle()
     spec.localRepositoryResolvesArtifactWithoutConfig()
     spec.snapshotArtifactDoesNotFallThroughToCacheOrPublic()
     spec.artifactCatalogUsesCurrentCompatibleRuntimeByDefault()
@@ -244,6 +245,10 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
         When("the launcher behavior is exercised")
         Then("the executable specification holds through scenario-specific expectations")
         executionRewritesToCncfArgs()
+      }
+
+      "server execution delegates default port resolution to the runtime" in {
+        serverExecutionDelegatesDefaultPortResolutionToRuntime()
       }
 
       "snapshot artifact does not fall through to cache or public" in {
@@ -881,25 +886,67 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     ))
   }
 
-  def textusAdminRegistrationLifecycle(): Unit = _with_temp_paths { paths =>
-    Given("a Textus server launcher with opt-in Textus Admin registration")
+  def serverExecutionDelegatesDefaultPortResolutionToRuntime(): Unit = _with_temp_paths { paths =>
+    Given("resolved CAR and SAR server invocations without an explicit server port")
+    val carrepo = paths.cwd.resolve("repo").resolve("car")
+    val sarrepo = paths.cwd.resolve("repo").resolve("sar")
+    _write(carrepo.resolve("textus-blog").resolve("0.1.0").resolve("textus-blog-0.1.0.car"), "")
+    _write(sarrepo.resolve("textus-platform").resolve("0.1.0").resolve("textus-platform-0.1.0.sar"), "")
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
+      s"""runtime:
+         |  version: 0.5.0
+         |  catalog:
+         |    url: ${paths.cwd.resolve("missing-runtime-catalog.yaml")}
+         |repositories:
+         |  car:
+         |    - $carrepo
+         |  sar:
+         |    - $sarrepo
+         |""".stripMargin)
+    val invoker = FakeInvoker()
+    val launcher = new TextusLauncher(paths, FakeResolver(), invoker)
+
+    When("the launcher delegates the CAR invocation to CNCF")
+    val carcode = launcher.run(Vector("textus-blog:0.1.0", "server"))
+
+    Then("CAR activation is forwarded without a launcher-owned port override")
+    _assert_equals(carcode, 0)
+    invoker.lastArgs.contains("--textus.component=textus-blog") shouldBe true
+    invoker.lastArgs.contains("--textus.component.version=0.1.0") shouldBe true
+    invoker.lastArgs.last shouldBe "server"
+    invoker.lastArgs.exists(_.startsWith("--textus.server.port=")) shouldBe false
+    invoker.lastArgs.exists(_.startsWith("--cncf.server.port=")) shouldBe false
+
+    When("the launcher delegates the SAR invocation to CNCF")
+    val sarcode = launcher.run(Vector("textus-platform.sar:0.1.0", "server"))
+
+    Then("SAR activation is forwarded without a launcher-owned port override")
+    _assert_equals(sarcode, 0)
+    invoker.lastArgs.contains("--textus.subsystem=textus-platform-0.1.0") shouldBe true
+    invoker.lastArgs.last shouldBe "server"
+    invoker.lastArgs.exists(_.startsWith("--textus.server.port=")) shouldBe false
+    invoker.lastArgs.exists(_.startsWith("--cncf.server.port=")) shouldBe false
+  }
+
+  def textusControlCenterRegistrationLifecycle(): Unit = _with_temp_paths { paths =>
+    Given("a Textus server launcher with opt-in Textus Control Center registration")
     val carrepo = paths.cwd.resolve("repo").resolve("car")
     _write(carrepo.resolve("textus-registration").resolve("0.1.0").resolve("textus-registration-0.1.0.car"), "")
     _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
       s"""repositories:
          |  car:
          |    - $carrepo
-         |textus-admin:
+         |textus-control-center:
          |  registration:
          |    enabled: true
-         |    endpoint: https://admin.example.test/rest/v1/textus-admin/subsystem-inventory
+         |    endpoint: https://admin.example.test/rest/v1/textus-control-center/subsystem-inventory
          |    token-env: TEXTUS_ADMIN_REGISTRATION_TOKEN
          |    timeout: 2s
          |    heartbeat-interval: 30s
          |    host-label: acceptance
          |    base-url: https://subsystem.example.test
          |""".stripMargin)
-    val reporter = FakeTextusAdminRegistrationReporter()
+    val reporter = FakeTextusControlCenterRegistrationReporter()
     val invoker = FakeInvoker()
     val launcher = new TextusLauncher(
       paths,
@@ -923,21 +970,21 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
 
     And("a higher-priority explicit disable suppresses inherited registration")
     val inherited = LauncherConfig(
-      textusAdminRegistration = Some(TextusAdminRegistrationConfig(
-        endpoint = "https://admin.example.test/rest/v1/textus-admin/subsystem-inventory",
+      textusControlCenterRegistration = Some(TextusControlCenterRegistrationConfig(
+        endpoint = "https://admin.example.test/rest/v1/textus-control-center/subsystem-inventory",
         tokenEnv = "TEXTUS_ADMIN_REGISTRATION_TOKEN",
         timeout = java.time.Duration.ofSeconds(2),
         heartbeatInterval = java.time.Duration.ofSeconds(30),
         hostLabel = "acceptance",
         baseUrl = "https://subsystem.example.test"
       )),
-      textusAdminRegistrationEnabled = Some(true)
+      textusControlCenterRegistrationEnabled = Some(true)
     )
-    val disabled = LauncherConfig(textusAdminRegistrationEnabled = Some(false))
-    inherited.mergeHigher(disabled).textusAdminRegistration shouldBe None
+    val disabled = LauncherConfig(textusControlCenterRegistrationEnabled = Some(false))
+    inherited.mergeHigher(disabled).textusControlCenterRegistration shouldBe None
 
     And("registration setup failures do not prevent server startup")
-    val unavailable = new ThrowingTextusAdminRegistrationReporter
+    val unavailable = new ThrowingTextusControlCenterRegistrationReporter
     val outageinvoker = FakeInvoker()
     val outagelauncher = new TextusLauncher(
       paths,
@@ -951,8 +998,8 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     outageinvoker.lastArgs.last shouldBe "server"
   }
 
-  def textusAdminRegistrationHttpLifecycle(): Unit = {
-    Given("a reachable Textus Admin automatic REST endpoint")
+  def textusControlCenterRegistrationHttpLifecycle(): Unit = {
+    Given("a reachable Textus Control Center automatic REST endpoint")
     val requests = scala.collection.mutable.ArrayBuffer.empty[(String, String)]
     val server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0)
     server.createContext("/", new HttpHandler {
@@ -964,15 +1011,15 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     })
     server.start()
     try {
-      val config = TextusAdminRegistrationConfig(
-        endpoint = s"http://127.0.0.1:${server.getAddress.getPort}/rest/v1/textus-admin/subsystem-inventory",
+      val config = TextusControlCenterRegistrationConfig(
+        endpoint = s"http://127.0.0.1:${server.getAddress.getPort}/rest/v1/textus-control-center/subsystem-inventory",
         tokenEnv = "TEXTUS_ADMIN_REGISTRATION_TOKEN",
         timeout = java.time.Duration.ofSeconds(1),
         heartbeatInterval = java.time.Duration.ofSeconds(30),
         hostLabel = "acceptance",
         baseUrl = "https://subsystem.example.test"
       )
-      val report = TextusAdminRegistrationReport(
+      val report = TextusControlCenterRegistrationReport(
         instanceId = "textus-registration-http-spec",
         target = "textus-registration",
         subsystemName = Some("textus-registration"),
@@ -982,7 +1029,7 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       )
 
       When("the reporter starts and closes one server registration session")
-      val session = TextusAdminRegistrationReporter.System.start(config, report, Some("test-token"))
+      val session = TextusControlCenterRegistrationReporter.System.start(config, report, Some("test-token"))
       session.close()
 
       Then("it sends register and deregister operations with the configured bearer credential")
@@ -1493,33 +1540,33 @@ final class FakeInvoker extends CncfInvoker {
   }
 }
 
-final class FakeTextusAdminRegistrationReporter extends TextusAdminRegistrationReporter {
-  var starts: Vector[(TextusAdminRegistrationReport, Option[String])] = Vector.empty
+final class FakeTextusControlCenterRegistrationReporter extends TextusControlCenterRegistrationReporter {
+  var starts: Vector[(TextusControlCenterRegistrationReport, Option[String])] = Vector.empty
   var closes: Int = 0
 
   def start(
-    config: TextusAdminRegistrationConfig,
-    report: TextusAdminRegistrationReport,
+    config: TextusControlCenterRegistrationConfig,
+    report: TextusControlCenterRegistrationReport,
     token: Option[String]
-  ): TextusAdminRegistrationSession = {
+  ): TextusControlCenterRegistrationSession = {
     starts :+= report -> token
-    new TextusAdminRegistrationSession {
+    new TextusControlCenterRegistrationSession {
       def close(): Unit = closes += 1
     }
   }
 }
 
-object FakeTextusAdminRegistrationReporter {
-  def apply(): FakeTextusAdminRegistrationReporter = new FakeTextusAdminRegistrationReporter()
+object FakeTextusControlCenterRegistrationReporter {
+  def apply(): FakeTextusControlCenterRegistrationReporter = new FakeTextusControlCenterRegistrationReporter()
 }
 
-final class ThrowingTextusAdminRegistrationReporter extends TextusAdminRegistrationReporter {
+final class ThrowingTextusControlCenterRegistrationReporter extends TextusControlCenterRegistrationReporter {
   def start(
-    config: TextusAdminRegistrationConfig,
-    report: TextusAdminRegistrationReport,
+    config: TextusControlCenterRegistrationConfig,
+    report: TextusControlCenterRegistrationReport,
     token: Option[String]
-  ): TextusAdminRegistrationSession =
-    throw TextusException("simulated Textus Admin outage")
+  ): TextusControlCenterRegistrationSession =
+    throw TextusException("simulated Textus Control Center outage")
 }
 
 object FakeInvoker {

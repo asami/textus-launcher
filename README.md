@@ -21,6 +21,13 @@ configuration is read from:
 - `$PWD/.textus/config.yaml`
 - `$PWD/.textus/launcher.yaml`
 
+For `textus <artifact> server`, the launcher resolves the CAR/SAR and forwards
+its activation without assigning a port. CNCF runtime reads
+`textus.server.default-port` from the artifact descriptor, coordinates the
+machine-local assignment, and selects an additional-instance port when the
+stable default is occupied. `textus.server.port` remains an explicit operator
+override.
+
 Runtime cache and resolved classpath metadata are kept under `~/.cncf`.
 Runtime version selection is driven by the Textus runtime catalog in the
 warehouse repository:
@@ -118,30 +125,30 @@ developer-owned local publish state. `~/.cncf/cache` is runtime-managed remote
 artifact cache and is managed separately. Snapshot components are local-only by
 default; missing snapshots should be published with `sbt cozyPublishLocalCar`.
 
-### Optional Textus Admin subsystem registration
+### Optional Textus Control Center subsystem registration
 
-Textus Admin can list subsystem processes launched by the canonical Textus
+Textus Control Center can list subsystem processes launched by the canonical Textus
 server command. Registration is opt-in and applies only to `textus <artifact>
 server` (including the compatible `textus server <artifact>` form); it does
 not use the deprecated CNCF development server.
 
 ```yaml
-textus-admin:
+textus-control-center:
   registration:
     enabled: true
-    endpoint: https://admin.example.test/rest/v1/textus-admin/subsystem-inventory
-    token-env: TEXTUS_ADMIN_REGISTRATION_TOKEN
+    endpoint: https://admin.example.test/rest/v1/textus-control-center/subsystem-inventory
+    token-env: TEXTUS_CONTROL_CENTER_REGISTRATION_TOKEN
     timeout: 2s
     heartbeat-interval: 30s
     host-label: production-a
     base-url: https://subsystem.example.test
 ```
 
-`endpoint` is the Textus Admin subsystem-inventory operation base URL. The
+`endpoint` is the Textus Control Center subsystem-inventory operation base URL. The
 launcher sends register, heartbeat, and deregister requests with the bearer
 credential from `token-env`; the credential value is neither written to config
 nor printed. Registration uses bounded requests. Missing credentials or
-unreachable Textus Admin do not prevent the subsystem server from starting.
+unreachable Textus Control Center do not prevent the subsystem server from starting.
 
 `.cozy/config.yaml` controls build/publish operation defaults.
 `.textus/config.yaml` controls the user-facing Textus launcher. The `cncf`

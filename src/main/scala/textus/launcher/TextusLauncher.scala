@@ -19,7 +19,7 @@ final class TextusLauncher(
   classpathexporter: RuntimeClasspathExporter = SbtRuntimeClasspathExporter,
   launcherdevinvoker: TextusLauncherDevInvoker = TextusLauncherDevInvoker.System,
   environment: Map[String, String] = sys.env,
-  registrationreporter: TextusAdminRegistrationReporter = TextusAdminRegistrationReporter.System
+  registrationreporter: TextusControlCenterRegistrationReporter = TextusControlCenterRegistrationReporter.System
 ) {
   def run(args: Vector[String]): Int = {
     val (configfiles, commandargs) = _take_config_options(args)
@@ -339,7 +339,7 @@ final class TextusLauncher(
     val session = _registration_session(command, resolved, runtimeversion, effectiveconfig)
     val shutdownhook = new Thread(
       () => session.close(),
-      "textus-admin-registration-shutdown"
+      "textus-control-center-registration-shutdown"
     )
     Runtime.getRuntime.addShutdownHook(shutdownhook)
     try {
@@ -355,16 +355,16 @@ final class TextusLauncher(
     artifact: ResolvedArtifact,
     runtimeversion: String,
     config: LauncherConfig
-  ): TextusAdminRegistrationSession =
+  ): TextusControlCenterRegistrationSession =
     if (command.mode != "server") {
-      TextusAdminRegistrationSession.noop
+      TextusControlCenterRegistrationSession.noop
     } else {
-      config.textusAdminRegistration match {
+      config.textusControlCenterRegistration match {
         case Some(registration) =>
           try {
             registrationreporter.start(
               registration,
-              TextusAdminRegistrationReport(
+              TextusControlCenterRegistrationReport(
                 instanceId = java.util.UUID.randomUUID().toString,
                 target = artifact.selector.name,
                 subsystemName = Some(artifact.selector.name),
@@ -376,10 +376,10 @@ final class TextusLauncher(
             )
           } catch {
             case _: Throwable =>
-              Console.err.println("warning: Textus Admin registration setup failed; continuing server startup.")
-              TextusAdminRegistrationSession.noop
+              Console.err.println("warning: Textus Control Center registration setup failed; continuing server startup.")
+              TextusControlCenterRegistrationSession.noop
           }
-        case None => TextusAdminRegistrationSession.noop
+        case None => TextusControlCenterRegistrationSession.noop
       }
     }
 
