@@ -7,12 +7,14 @@ import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
+import java.util.concurrent.ConcurrentLinkedQueue
+import scala.jdk.CollectionConverters.*
 
 /*
  * @since   May. 17, 2026
  *  version May. 27, 2026
  *  version Jun. 29, 2026
- * @version Jul. 18, 2026
+ * @version Jul. 19, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -41,6 +43,7 @@ object TextusLauncherSpec {
     spec.executionRewritesToCncfArgs()
     spec.serverExecutionDelegatesDefaultPortResolutionToRuntime()
     spec.textusControlCenterRegistrationLifecycle()
+    spec.standaloneControlCenterLocatorLifecycle()
     spec.textusControlCenterRegistrationHttpLifecycle()
     spec.localRepositoryResolvesArtifactWithoutConfig()
     spec.snapshotArtifactDoesNotFallThroughToCacheOrPublic()
@@ -249,6 +252,18 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
 
       "server execution delegates default port resolution to the runtime" in {
         serverExecutionDelegatesDefaultPortResolutionToRuntime()
+      }
+
+      "canonical server commands report one Textus Control Center lifecycle" in {
+        textusControlCenterRegistrationLifecycle()
+      }
+
+      "canonical server commands resolve one standalone Control Center locator" in {
+        standaloneControlCenterLocatorLifecycle()
+      }
+
+      "Textus Control Center reporter calls automatic REST operations" in {
+        textusControlCenterRegistrationHttpLifecycle()
       }
 
       "snapshot artifact does not fall through to cache or public" in {
@@ -998,13 +1013,77 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     outageinvoker.lastArgs.last shouldBe "server"
   }
 
+  def standaloneControlCenterLocatorLifecycle(): Unit = _with_temp_paths { paths =>
+    Given("a machine-local standalone Control Center locator and owner-only launcher token")
+    val carrepo = paths.cwd.resolve("repo").resolve("car")
+    _write(carrepo.resolve("textus-registration").resolve("0.1.0").resolve("textus-registration-0.1.0.car"), "")
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
+      s"""repositories:
+         |  car:
+         |    - $carrepo
+         |""".stripMargin)
+    val root = paths.cncfHome.resolve("textus-control-center")
+    val token = root.resolve("credentials").resolve("launcher-registration.token")
+    _write(token, "standalone-token\n")
+    Files.setPosixFilePermissions(token, java.util.Set.of(java.nio.file.attribute.PosixFilePermission.OWNER_READ, java.nio.file.attribute.PosixFilePermission.OWNER_WRITE))
+    _write(root.resolve("standalone-locator.yaml"),
+      """schemaVersion: 1
+        |profile: standalone
+        |scopeId: scope-test
+        |installationId: standalone-test
+        |endpoint: http://127.0.0.1:18013/rest/v1/textus-control-center/subsystem-inventory
+        |credentialRef: credentials/launcher-registration.token
+        |timeout: 2s
+        |heartbeatInterval: 30s
+        |hostLabel: standalone-test
+        |""".stripMargin)
+    val reporter = FakeTextusControlCenterRegistrationReporter()
+    val invoker = FakeInvoker()
+    val launcher = new TextusLauncher(paths, FakeResolver(), invoker, registrationreporter = reporter)
+
+    When("the canonical target-first server command runs without inline registration configuration")
+    val code = launcher.run(Vector("textus-registration", "server", "--textus.server.port=18014"))
+
+    Then("the locator credential supplies one Textus lifecycle session")
+    _assert_equals(code, 0)
+    _assert_equals(reporter.starts.size, 1)
+    _assert_equals(reporter.starts.head._1.target, "textus-registration")
+    _assert_equals(reporter.starts.head._2, Some("standalone-token"))
+    _assert_equals(reporter.configs.head.baseUrl, "http://127.0.0.1:18014")
+    _assert_equals(reporter.closes, 1)
+
+    When("the shared credential is no longer owner-readable and owner-writable only")
+    Files.setPosixFilePermissions(token, java.util.Set.of(java.nio.file.attribute.PosixFilePermission.OWNER_READ))
+    val invalidlocatorcode = launcher.run(Vector("textus-registration", "server"))
+
+    Then("the invalid locator is ignored without changing server startup")
+    _assert_equals(invalidlocatorcode, 0)
+    _assert_equals(reporter.starts.size, 1)
+
+    When("an explicit registration disable is configured")
+    _write(paths.cwd.resolve(".textus").resolve("config.yaml"),
+      s"""repositories:
+         |  car:
+         |    - $carrepo
+         |textus-control-center:
+         |  registration:
+         |    enabled: false
+         |""".stripMargin)
+    val disabledlauncher = new TextusLauncher(paths, FakeResolver(), FakeInvoker(), registrationreporter = reporter)
+    val disabledcode = disabledlauncher.run(Vector("textus-registration", "server"))
+
+    Then("the machine locator is not used")
+    _assert_equals(disabledcode, 0)
+    _assert_equals(reporter.starts.size, 1)
+  }
+
   def textusControlCenterRegistrationHttpLifecycle(): Unit = {
     Given("a reachable Textus Control Center automatic REST endpoint")
-    val requests = scala.collection.mutable.ArrayBuffer.empty[(String, String)]
+    val requests = new ConcurrentLinkedQueue[(String, String)]()
     val server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0)
     server.createContext("/", new HttpHandler {
       override def handle(exchange: HttpExchange): Unit = {
-        requests += exchange.getRequestURI.toString -> exchange.getRequestHeaders.getFirst("Authorization")
+        requests.add(exchange.getRequestURI.toString -> exchange.getRequestHeaders.getFirst("Authorization"))
         exchange.sendResponseHeaders(204, -1)
         exchange.close()
       }
@@ -1031,14 +1110,51 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       When("the reporter starts and closes one server registration session")
       val session = TextusControlCenterRegistrationReporter.System.start(config, report, Some("test-token"))
       session.close()
+      session.close()
 
-      Then("it sends register and deregister operations with the configured bearer credential")
-      requests.map(_._1).exists(_.contains("register-subsystem")) shouldBe true
-      requests.map(_._1).exists(_.contains("deregister-subsystem")) shouldBe true
-      requests.forall(_._2 == "Bearer test-token") shouldBe true
-      requests.forall { case (path, _) => path.contains("instanceId=textus-registration-http-spec") } shouldBe true
-      requests.forall { case (path, _) => path.contains("?protocolVersion=1&instanceId=") } shouldBe true
+      Then("it sends one register and one deregister operation with the configured bearer credential")
+      _assert_equals(requests.size, 2)
+      requests.iterator.asScala.map(_._1).exists(_.contains("register-subsystem")) shouldBe true
+      requests.iterator.asScala.map(_._1).exists(_.contains("deregister-subsystem")) shouldBe true
+      requests.iterator.asScala.forall(_._2 == "Bearer test-token") shouldBe true
+      requests.iterator.asScala.forall { case (path, _) => path.contains("instanceId=textus-registration-http-spec") } shouldBe true
+      requests.iterator.asScala.forall { case (path, _) => path.contains("?protocolVersion=1&instanceId=") } shouldBe true
+
+      Given("registration without an explicit public base URL")
+      requests.clear()
+      val propertykey = "textus.server.bound-base-url"
+      sys.props.remove(propertykey)
+
+      When("CNCF publishes the endpoint after the server has bound")
+      val dynamicsession = TextusControlCenterRegistrationReporter.System.start(config.copy(baseUrl = ""), report, Some("test-token"))
+      sys.props.update(propertykey, "http://127.0.0.1:38001")
+      val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2)
+      while (requests.size < 1 && System.nanoTime() < deadline)
+        Thread.sleep(10L)
+      dynamicsession.close()
+      val closedeadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2)
+      while (requests.size < 2 && System.nanoTime() < closedeadline)
+        Thread.sleep(10L)
+      sys.props.remove(propertykey)
+
+      Then("registration uses the bound endpoint rather than a guessed default port")
+      _assert_equals(requests.size, 2)
+      requests.iterator.asScala.forall(_._1.contains("baseUrl=http%3A%2F%2F127.0.0.1%3A38001")) shouldBe true
+
+      And("the previous canonical textus-admin key remains readable during migration")
+      val legacyvalues = LauncherConfigParser.parse(
+        Path.of("legacy-launcher.yaml"),
+        """textus-admin:
+          |  registration:
+          |    enabled: true
+          |    endpoint: https://admin.example.test/inventory
+          |    token-env: TOKEN
+          |    host-label: legacy
+          |""".stripMargin
+      )
+      TextusControlCenterRegistrationConfig.fromParsed(legacyvalues).map(_.hostLabel) shouldBe Some("legacy")
     } finally {
+      sys.props.remove("textus.server.bound-base-url")
       server.stop(0)
     }
   }
@@ -1542,6 +1658,7 @@ final class FakeInvoker extends CncfInvoker {
 
 final class FakeTextusControlCenterRegistrationReporter extends TextusControlCenterRegistrationReporter {
   var starts: Vector[(TextusControlCenterRegistrationReport, Option[String])] = Vector.empty
+  var configs: Vector[TextusControlCenterRegistrationConfig] = Vector.empty
   var closes: Int = 0
 
   def start(
@@ -1550,6 +1667,7 @@ final class FakeTextusControlCenterRegistrationReporter extends TextusControlCen
     token: Option[String]
   ): TextusControlCenterRegistrationSession = {
     starts :+= report -> token
+    configs :+= config
     new TextusControlCenterRegistrationSession {
       def close(): Unit = closes += 1
     }

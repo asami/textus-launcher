@@ -9,7 +9,7 @@ import scala.sys.process.*
  * @since   May. 17, 2026
  *  version May. 27, 2026
  *  version Jun. 29, 2026
- * @version Jul. 18, 2026
+ * @version Jul. 19, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
@@ -359,11 +359,19 @@ final class TextusLauncher(
     if (command.mode != "server") {
       TextusControlCenterRegistrationSession.noop
     } else {
-      config.textusControlCenterRegistration match {
-        case Some(registration) =>
+      val registration = config.textusControlCenterRegistration.map(value => value -> environment.get(value.tokenEnv)).orElse {
+        Option.when(!config.textusControlCenterRegistrationEnabled.contains(false))(
+          TextusControlCenterStandaloneLocator.resolve(paths).map { value =>
+            val configuration = _standalone_registration_base_url(command).fold(value.config)(baseurl => value.config.copy(baseUrl = baseurl))
+            configuration -> Some(value.token)
+          }
+        ).flatten
+      }
+      registration match {
+        case Some((configuration, token)) =>
           try {
             registrationreporter.start(
-              registration,
+              configuration,
               TextusControlCenterRegistrationReport(
                 instanceId = java.util.UUID.randomUUID().toString,
                 target = artifact.selector.name,
@@ -372,7 +380,7 @@ final class TextusLauncher(
                 runtimeVersion = runtimeversion,
                 startedAt = java.time.Instant.now()
               ),
-              environment.get(registration.tokenEnv)
+              token
             )
           } catch {
             case _: Throwable =>
@@ -381,6 +389,14 @@ final class TextusLauncher(
           }
         case None => TextusControlCenterRegistrationSession.noop
       }
+    }
+
+  private def _standalone_registration_base_url(command: TextusCommand.Execute): Option[String] =
+    (command.args ++ command.passthrough).collectFirst {
+      case value if value.startsWith("--textus.server.port=") => value.stripPrefix("--textus.server.port=")
+      case value if value.startsWith("--cncf.server.port=") => value.stripPrefix("--cncf.server.port=")
+    }.flatMap { value =>
+      scala.util.Try(value.toInt).toOption.filter(port => port >= 1 && port <= 65535).map(port => s"http://127.0.0.1:$port")
     }
 
   private def _cncf_args(

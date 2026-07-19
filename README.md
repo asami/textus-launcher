@@ -141,7 +141,8 @@ textus-control-center:
     timeout: 2s
     heartbeat-interval: 30s
     host-label: production-a
-    base-url: https://subsystem.example.test
+    # Optional public endpoint override:
+    # base-url: https://subsystem.example.test
 ```
 
 `endpoint` is the Textus Control Center subsystem-inventory operation base URL. The
@@ -149,6 +150,11 @@ launcher sends register, heartbeat, and deregister requests with the bearer
 credential from `token-env`; the credential value is neither written to config
 nor printed. Registration uses bounded requests. Missing credentials or
 unreachable Textus Control Center do not prevent the subsystem server from starting.
+
+When `base-url` is omitted, registration waits until the CNCF runtime has bound
+and uses its actual loopback endpoint. This includes additional instances
+allocated from the dynamic port range. Set `base-url` only when the registered
+public endpoint differs from the runtime bind endpoint, such as behind a proxy.
 
 `.cozy/config.yaml` controls build/publish operation defaults.
 `.textus/config.yaml` controls the user-facing Textus launcher. The `cncf`
