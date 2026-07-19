@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 /*
  * @since   Jul. 18, 2026
- * @version Jul. 18, 2026
+ * @version Jul. 19, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class TextusControlCenterRegistrationConfig(
@@ -64,6 +64,8 @@ object TextusControlCenterRegistrationConfig {
 final case class TextusControlCenterRegistrationReport(
   instanceId: String,
   target: String,
+  executionMode: String,
+  developmentDirectory: Option[String],
   subsystemName: Option[String],
   subsystemVersion: Option[String],
   runtimeVersion: String,
@@ -202,12 +204,13 @@ private final class SystemTextusControlCenterRegistrationReporter extends Textus
       "instanceId" -> report.instanceId,
       "launcherKind" -> "textus",
       "target" -> report.target,
+      "executionMode" -> report.executionMode,
       "runtimeVersion" -> report.runtimeVersion,
       "baseUrl" -> config.baseUrl,
       "hostLabel" -> config.hostLabel,
       "startedAt" -> report.startedAt.toString,
       "launcherState" -> state
-    ) ++ report.subsystemName.map("subsystemName" -> _).toVector ++ report.subsystemVersion.map("subsystemVersion" -> _).toVector
+    ) ++ report.developmentDirectory.map("developmentDirectory" -> _).toVector ++ report.subsystemName.map("subsystemName" -> _).toVector ++ report.subsystemVersion.map("subsystemVersion" -> _).toVector
 
   private def _operation_endpoint(
     config: TextusControlCenterRegistrationConfig,

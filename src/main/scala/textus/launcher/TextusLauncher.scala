@@ -375,6 +375,8 @@ final class TextusLauncher(
               TextusControlCenterRegistrationReport(
                 instanceId = java.util.UUID.randomUUID().toString,
                 target = artifact.selector.name,
+                executionMode = "artifact",
+                developmentDirectory = None,
                 subsystemName = Some(artifact.selector.name),
                 subsystemVersion = artifact.selector.version,
                 runtimeVersion = runtimeversion,

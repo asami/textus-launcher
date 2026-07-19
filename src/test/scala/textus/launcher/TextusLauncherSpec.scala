@@ -979,6 +979,8 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     _assert_equals(reporter.starts.size, 1)
     _assert_equals(reporter.closes, 1)
     _assert_equals(reporter.starts.head._1.target, "textus-registration")
+    _assert_equals(reporter.starts.head._1.executionMode, "artifact")
+    _assert_equals(reporter.starts.head._1.developmentDirectory, None)
     _assert_equals(reporter.starts.head._1.subsystemVersion, Some("0.1.0"))
     _assert_equals(reporter.starts.head._2, Some("secret-token"))
     invoker.lastArgs.last shouldBe "server"
@@ -1101,6 +1103,8 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       val report = TextusControlCenterRegistrationReport(
         instanceId = "textus-registration-http-spec",
         target = "textus-registration",
+        executionMode = "artifact",
+        developmentDirectory = None,
         subsystemName = Some("textus-registration"),
         subsystemVersion = Some("0.1.0"),
         runtimeVersion = "0.5.0",
