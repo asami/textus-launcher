@@ -979,6 +979,7 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     _assert_equals(reporter.starts.size, 1)
     _assert_equals(reporter.closes, 1)
     _assert_equals(reporter.starts.head._1.target, "textus-registration")
+    _assert_equals(reporter.starts.head._1.artifactId, Some("textus-registration"))
     _assert_equals(reporter.starts.head._1.executionMode, "artifact")
     _assert_equals(reporter.starts.head._1.developmentDirectory, None)
     _assert_equals(reporter.starts.head._1.subsystemVersion, Some("0.1.0"))
@@ -1103,6 +1104,7 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       val report = TextusControlCenterRegistrationReport(
         instanceId = "textus-registration-http-spec",
         target = "textus-registration",
+        artifactId = Some("textus-registration"),
         executionMode = "artifact",
         developmentDirectory = None,
         subsystemName = Some("textus-registration"),
@@ -1122,6 +1124,7 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       requests.iterator.asScala.map(_._1).exists(_.contains("deregister-subsystem")) shouldBe true
       requests.iterator.asScala.forall(_._2 == "Bearer test-token") shouldBe true
       requests.iterator.asScala.forall { case (path, _) => path.contains("instanceId=textus-registration-http-spec") } shouldBe true
+      requests.iterator.asScala.forall { case (path, _) => path.contains("artifactId=textus-registration") } shouldBe true
       requests.iterator.asScala.forall { case (path, _) => path.contains("?protocolVersion=1&instanceId=") } shouldBe true
 
       Given("registration without an explicit public base URL")
