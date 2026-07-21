@@ -14,7 +14,7 @@ import scala.jdk.CollectionConverters.*
  * @since   May. 17, 2026
  *  version May. 27, 2026
  *  version Jun. 29, 2026
- * @version Jul. 21, 2026
+ * @version Jul. 22, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -45,6 +45,7 @@ object TextusLauncherSpec {
     spec.textusControlCenterRegistrationLifecycle()
     spec.standaloneControlCenterLocatorLifecycle()
     spec.textusControlCenterRegistrationHttpLifecycle()
+    spec.lifecycleSupervisorDelegateLifecycle()
     spec.localRepositoryResolvesArtifactWithoutConfig()
     spec.snapshotArtifactDoesNotFallThroughToCacheOrPublic()
     spec.artifactCatalogUsesCurrentCompatibleRuntimeByDefault()
@@ -1214,6 +1215,54 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       sys.props.remove("textus.server.bound-base-url")
       server.stop(0)
     }
+  }
+
+  def lifecycleSupervisorDelegateLifecycle(): Unit = {
+    Given("a local CNCF launcher supervisor that owns lifecycle requests")
+    val requests = new ConcurrentLinkedQueue[(String, String, String)]()
+    val server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0)
+    server.createContext("/v1/lifecycle-requests", new HttpHandler {
+      override def handle(exchange: HttpExchange): Unit = {
+        val body = new String(exchange.getRequestBody.readAllBytes(), StandardCharsets.UTF_8)
+        requests.add((exchange.getRequestMethod, exchange.getRequestURI.toString, exchange.getRequestHeaders.getFirst("Authorization") + "|" + body))
+        val response = """{"requestId":"delegated-request","state":"accepted","instanceId":"supervisor-instance"}""".getBytes(StandardCharsets.UTF_8)
+        exchange.getResponseHeaders.set("Content-Type", "application/json")
+        exchange.sendResponseHeaders(200, response.length)
+        val output = exchange.getResponseBody
+        try output.write(response) finally output.close()
+      }
+    })
+    server.createContext("/v1/lifecycle-requests/delegated-request", new HttpHandler {
+      override def handle(exchange: HttpExchange): Unit = {
+        requests.add((exchange.getRequestMethod, exchange.getRequestURI.toString, exchange.getRequestHeaders.getFirst("Authorization") + "|"))
+        val response = """{"requestId":"delegated-request","state":"accepted","instanceId":"supervisor-instance"}""".getBytes(StandardCharsets.UTF_8)
+        exchange.getResponseHeaders.set("Content-Type", "application/json")
+        exchange.sendResponseHeaders(200, response.length)
+        val output = exchange.getResponseBody
+        try output.write(response) finally output.close()
+      }
+    })
+    server.start()
+    try {
+      val endpoint = java.net.URI.create(s"http://127.0.0.1:${server.getAddress.getPort}")
+      val requestjson = """{"requestId":"delegated-request","idempotencyKey":"key","artifactId":"textus-registration","action":"start","operatorSubjectId":"operator","deadlineAt":"2026-07-22T00:05:00Z"}"""
+
+      When("Textus launcher delegates one lifecycle submission and later lookup to the shared supervisor")
+      val submitted = LifecycleSupervisorDelegate.System.submit(endpoint, "supervisor-token", requestjson, java.time.Duration.ofSeconds(1))
+      val lookedup = LifecycleSupervisorDelegate.System.lookup(endpoint, "supervisor-token", "delegated-request", java.time.Duration.ofSeconds(1))
+
+      Then("it uses only the authenticated local protocol and preserves the supervisor result without creating process authority")
+      submitted shouldBe Right("""{"requestId":"delegated-request","state":"accepted","instanceId":"supervisor-instance"}""")
+      lookedup shouldBe Right("""{"requestId":"delegated-request","state":"accepted","instanceId":"supervisor-instance"}""")
+      requests.asScala.toVector.map(_._1) shouldBe Vector("POST", "GET")
+      requests.asScala.forall(_._2.startsWith("/v1/lifecycle-requests")) shouldBe true
+      requests.asScala.forall(_._3.startsWith("Bearer supervisor-token|")) shouldBe true
+
+      And("a non-loopback endpoint and malformed request identity do not cause a network request")
+      LifecycleSupervisorDelegate.System.submit(java.net.URI.create("https://supervisor.example.test"), "supervisor-token", requestjson, java.time.Duration.ofSeconds(1)) shouldBe Left("supervisor-protocol-unavailable")
+      LifecycleSupervisorDelegate.System.lookup(endpoint, "supervisor-token", " ", java.time.Duration.ofSeconds(1)) shouldBe Left("supervisor-request-invalid")
+      requests.size shouldBe 2
+    } finally server.stop(0)
   }
 
   def localRepositoryResolvesArtifactWithoutConfig(): Unit = _with_temp_paths { paths =>
