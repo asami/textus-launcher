@@ -3,7 +3,8 @@ package textus.launcher
 /*
  * @since   May. 17, 2026
  *  version May. 27, 2026
- * @version Jun. 29, 2026
+ *  version Jun. 29, 2026
+ * @version Jul. 21, 2026
  * @author  ASAMI, Tomoharu
  */
 enum ArtifactKind {
@@ -61,6 +62,13 @@ object TextusCommand {
     final case class ConfigShow() extends Runtime
   }
 
+  sealed trait Repository extends TextusCommand
+  object Repository {
+    final case class ListArtifacts(kind: Option[ArtifactKind], source: Option[String]) extends Repository
+    final case class Show(artifactId: String, kind: Option[ArtifactKind], source: Option[String]) extends Repository
+    final case class Refresh(source: Option[String]) extends Repository
+  }
+
   enum RuntimeUseTarget {
     case Auto, Global, Project
   }
@@ -93,6 +101,8 @@ object TextusCommandParser {
               _parse_execute(rest, runtimeversion, runtimedevdir, selectionpolicy, nocompatiblepolicy)
             case Some("runtime") =>
               _parse_runtime(rest.tail)
+            case Some("repository") =>
+              _parse_repository(rest.tail)
             case Some(target) if rest.drop(1).headOption.exists(_is_target_mode) && !_is_reserved_target(target) =>
               _parse_target_execute(rest, runtimeversion, runtimedevdir, selectionpolicy, nocompatiblepolicy)
             case Some(other) =>
@@ -227,7 +237,56 @@ object TextusCommandParser {
     value == "command" || value == "server" || value == "client"
 
   private def _is_reserved_target(value: String): Boolean =
-    Set("runtime", "install-cli", "version", "help", "launcher", "dev").contains(value)
+    Set("runtime", "repository", "install-cli", "version", "help", "launcher", "dev").contains(value)
+
+  private def _parse_repository(args: Vector[String]): TextusCommand.Repository = {
+    if (args.isEmpty)
+      throw TextusException("textus repository requires list, show, or refresh")
+    val operation = args.head
+    var kind: Option[ArtifactKind] = None
+    var source: Option[String] = None
+    var positional = Vector.empty[String]
+    var i = 1
+    while (i < args.length) {
+      args(i) match {
+        case "--kind" =>
+          if (i + 1 >= args.length) throw TextusException("--kind requires car or sar")
+          kind = Some(_repository_kind(args(i + 1)))
+          i += 2
+        case value if value.startsWith("--kind=") =>
+          kind = Some(_repository_kind(value.stripPrefix("--kind=")))
+          i += 1
+        case "--source" =>
+          if (i + 1 >= args.length) throw TextusException("--source requires a configured repository root")
+          source = Some(args(i + 1))
+          i += 2
+        case value if value.startsWith("--source=") =>
+          source = Some(value.stripPrefix("--source="))
+          i += 1
+        case value if value.startsWith("--") =>
+          throw TextusException(s"unknown textus repository option: $value")
+        case value =>
+          positional :+= value
+          i += 1
+      }
+    }
+    operation match {
+      case "list" if positional.isEmpty => TextusCommand.Repository.ListArtifacts(kind, source)
+      case "show" if positional.size == 1 => TextusCommand.Repository.Show(positional.head, kind, source)
+      case "refresh" if positional.size <= 1 && kind.isEmpty => TextusCommand.Repository.Refresh(source.orElse(positional.headOption))
+      case "list" => throw TextusException("textus repository list accepts only --kind and --source")
+      case "show" => throw TextusException("textus repository show requires one artifact id")
+      case "refresh" => throw TextusException("textus repository refresh accepts one configured source")
+      case other => throw TextusException(s"unknown textus repository command: $other")
+    }
+  }
+
+  private def _repository_kind(value: String): ArtifactKind =
+    value.toLowerCase match {
+      case "car" => ArtifactKind.Car
+      case "sar" => ArtifactKind.Sar
+      case other => throw TextusException(s"unsupported repository artifact kind: $other")
+    }
 
   private def _parse_target_execute(
     args: Vector[String],
@@ -343,6 +402,9 @@ object TextusCommandParser {
       |  textus runtime use <version> --project
       |  textus runtime cache status
       |  textus runtime config show
+      |  textus repository list [--kind car|sar] [--source <configured-root>]
+      |  textus repository show <artifact-id> [--kind car|sar] [--source <configured-root>]
+      |  textus repository refresh [<configured-root>|--source <configured-root>]
       |
       |Artifact:
       |  textus-blog          auto-detect CAR/SAR from repositories
@@ -355,6 +417,8 @@ object TextusCommandParser {
       |  Use sbt cozyPublishLocalCar or sbt cozyPublishLocalSar while developing dependency components.
       |  ~/.cncf/local is developer local publish state; ~/.cncf/cache is runtime-managed remote artifact cache.
       |  Snapshot components are local-only by default; missing snapshots should be published with sbt cozyPublishLocalCar.
+      |  Repository list uses local and cached component indexes without network or archive downloads.
+      |  Repository refresh only contacts configured repository roots and preserves stale cache on failure.
       |
       |Compatibility:
       |  artifact@version remains accepted as a legacy spelling.

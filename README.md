@@ -125,6 +125,33 @@ developer-owned local publish state. `~/.cncf/cache` is runtime-managed remote
 artifact cache and is managed separately. Snapshot components are local-only by
 default; missing snapshots should be published with `sbt cozyPublishLocalCar`.
 
+## Component Repository Discovery
+
+Textus lists released CAR and SAR identities from the CNCF Component Repository
+index. Listing is offline: it combines live local indexes with previously
+refreshed public indexes and does not download detailed catalogs or archives.
+
+```bash
+textus repository refresh
+textus repository list
+textus repository list --kind car
+textus repository show textus-blog --kind car
+textus repository refresh https://example.com/repository
+```
+
+`refresh` is bounded to repository roots derived from the configured CAR/SAR
+repositories. Each root exposes `catalog/index.json`. A successful refresh
+caches the validated index with its safe source locator, retrieval time, schema,
+and last-attempt time under `~/.cncf/cache/component-repository/`. A failed or
+malformed refresh preserves the previous valid index and reports it as stale.
+
+Precedence is local repository index, then cached public index. Equal-precedence
+conflicts are resolved deterministically and reported. `show` validates the
+selected index entry against its detailed CAR/SAR catalog; execution continues
+to use the existing artifact resolver, including repositories that do not yet
+publish a component index. User information, query parameters, and local
+absolute paths are not printed in source diagnostics.
+
 ### Optional Textus Control Center subsystem registration
 
 Textus Control Center can list subsystem processes launched by the canonical Textus

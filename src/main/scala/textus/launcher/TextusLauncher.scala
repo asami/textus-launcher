@@ -9,7 +9,7 @@ import scala.sys.process.*
  * @since   May. 17, 2026
  *  version May. 27, 2026
  *  version Jun. 29, 2026
- * @version Jul. 19, 2026
+ * @version Jul. 21, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
@@ -44,10 +44,36 @@ final class TextusLauncher(
         0
       case runtime: TextusCommand.Runtime =>
         _run_runtime(runtime, config)
+      case repository: TextusCommand.Repository =>
+        _run_repository(repository, config)
       case install: TextusCommand.InstallCli =>
         _run_install_cli(install, config)
       case execute: TextusCommand.Execute =>
         _run_execute(execute, config)
+    }
+  }
+
+  private def _run_repository(command: TextusCommand.Repository, config: LauncherConfig): Int = {
+    val discovery = ComponentRepositoryDiscovery(paths)
+    command match {
+      case TextusCommand.Repository.ListArtifacts(kind, source) =>
+        val result = discovery.list(config, kind, source)
+        result.diagnostics.foreach(message => Console.err.println(s"warning: $message"))
+        result.artifacts.foreach(artifact => println(artifact.render))
+        0
+      case TextusCommand.Repository.Show(artifactid, kind, source) =>
+        val result = discovery.show(config, artifactid, kind, source)
+        result.diagnostics.foreach(message => Console.err.println(s"warning: $message"))
+        println(result.artifact.renderDetailed)
+        0
+      case TextusCommand.Repository.Refresh(source) =>
+        val result = discovery.refresh(config, source)
+        result.diagnostics.foreach(message => Console.err.println(s"warning: $message"))
+        result.refreshed.foreach(value => println(s"refreshed component repository index: $value"))
+        if (result.failures.nonEmpty) {
+          result.failures.foreach(message => Console.err.println(s"error: $message"))
+          1
+        } else 0
     }
   }
 

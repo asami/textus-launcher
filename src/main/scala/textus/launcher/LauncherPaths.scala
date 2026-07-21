@@ -4,7 +4,8 @@ import java.nio.file.{Path, Paths}
 
 /*
  * @since   May. 17, 2026
- * @version Jun. 27, 2026
+ *  version Jun. 27, 2026
+ * @version Jul. 21, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class LauncherPaths(
@@ -26,6 +27,7 @@ final case class LauncherPaths(
   val cacheRepository: Path = cncfHome.resolve("cache")
   val cacheCarRepository: Path = cacheRepository.resolve("car")
   val cacheSarRepository: Path = cacheRepository.resolve("sar")
+  val componentRepositoryCache: Path = cacheRepository.resolve("component-repository")
 
   def withCwd(path: Path): LauncherPaths =
     copy(cwd = path.toAbsolutePath.normalize)

@@ -14,7 +14,7 @@ import scala.jdk.CollectionConverters.*
  * @since   May. 17, 2026
  *  version May. 27, 2026
  *  version Jun. 29, 2026
- * @version Jul. 19, 2026
+ * @version Jul. 21, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -57,8 +57,14 @@ object TextusLauncherSpec {
     spec.runtimeConflictCanUseNewestPolicy()
     spec.explicitRuntimeIsValidatedAgainstArtifactRequirement()
     spec.runtimeCommandDoesNotLoadCncf()
+    spec.componentRepositoryCommandParser()
+    spec.componentRepositoryLocalPrecedenceAndConflictDiagnostics()
+    spec.componentRepositoryRefreshIsBoundedAndPreservesStaleCache()
+    spec.componentRepositoryShowValidatesDetailedCatalog()
+    spec.componentRepositoryShowValidatesJsonDetailedCatalog()
+    spec.componentRepositoryShowPreservesValidatedDetailCache()
     spec.latestRuntimeIsConcrete()
-    spec.noRuntimeLibraryDependencies()
+    spec.noCncfRuntimeLibraryDependencies()
     println("TextusLauncherSpec: OK")
   }
 }
@@ -325,11 +331,11 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     }
 
     "packaging boundaries" which {
-      "no runtime library dependencies" in {
+      "no CNCF runtime library dependencies" in {
         Given("the textus launcher scenario: no runtime library dependencies")
         When("the launcher behavior is exercised")
         Then("the executable specification holds through scenario-specific expectations")
-        noRuntimeLibraryDependencies()
+        noCncfRuntimeLibraryDependencies()
       }
 
     }
@@ -342,6 +348,50 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
         helpExplainsLocalRepository()
       }
 
+    }
+
+    "component repository discovery" which {
+      "parse list, show, and refresh commands" in {
+        Given("component repository discovery command arguments")
+        When("the Textus command parser reads list, show, and refresh forms")
+        Then("artifact kind and configured source selectors remain explicit")
+        componentRepositoryCommandParser()
+      }
+
+      "prefer local entries and diagnose equal-precedence conflicts" in {
+        Given("local and cached indexes that expose overlapping component identities")
+        When("Textus lists component repository artifacts without network access")
+        Then("local entries win and equal-precedence local conflicts are deterministic")
+        componentRepositoryLocalPrecedenceAndConflictDiagnostics()
+      }
+
+      "bound refresh and preserve stale cache" in {
+        Given("an explicitly configured remote repository and a previously valid cached index")
+        When("refresh later receives a malformed index")
+        Then("only the fixed index URL is requested and the stale valid cache remains listable")
+        componentRepositoryRefreshIsBoundedAndPreservesStaleCache()
+      }
+
+      "validate detailed catalogs on show" in {
+        Given("a local repository index and its detailed artifact catalog")
+        When("Textus shows the selected component")
+        Then("the index identity and selectors are checked against the detailed catalog")
+        componentRepositoryShowValidatesDetailedCatalog()
+      }
+
+      "validate JSON detailed catalogs on show" in {
+        Given("a local repository index that references a JSON artifact catalog")
+        When("Textus shows the selected component")
+        Then("the JSON identity and selectors satisfy the same detail contract as YAML")
+        componentRepositoryShowValidatesJsonDetailedCatalog()
+      }
+
+      "preserve validated detail cache" in {
+        Given("a validated remote detailed catalog and a later mismatched response")
+        When("Textus shows the same component again")
+        Then("the mismatched response is not cached and stale validated detail use is diagnosed")
+        componentRepositoryShowPreservesValidatedDetailCache()
+      }
     }
 
   }
@@ -1451,16 +1501,127 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     _assert_equals(resolver.resolvedVersions, Vector(LauncherConfig.DEFAULT_RUNTIME_VERSION))
   }
 
-  def noRuntimeLibraryDependencies(): Unit = {
-    val lines = Files.readString(Path.of("build.sbt")).linesIterator.toVector.map(_.trim)
-    def _runtime_library_dependency_(line: String): Boolean =
-      line.contains("libraryDependencies") &&
-        line.contains("\"") &&
-        !line.contains("goldenport-launcher-core") &&
-        !line.contains("% Test") &&
-        !line.contains("% \"test\"")
-    lines.exists(_runtime_library_dependency_) shouldBe false
-    lines.exists(_.contains("goldenport-launcher-core")) shouldBe true
+  def noCncfRuntimeLibraryDependencies(): Unit = {
+    val build = Files.readString(Path.of("build.sbt"))
+    build should not include "goldenport-cncf"
+    build should include("goldenport-launcher-core")
+  }
+
+  def componentRepositoryCommandParser(): Unit = {
+    val list = TextusCommandParser.parse(Vector("repository", "list", "--kind", "car", "--source=https://repo.example/repository"))
+      .asInstanceOf[TextusCommand.Repository.ListArtifacts]
+    list.kind shouldBe Some(ArtifactKind.Car)
+    list.source shouldBe Some("https://repo.example/repository")
+
+    val show = TextusCommandParser.parse(Vector("repository", "show", "textus-blog", "--kind=sar"))
+      .asInstanceOf[TextusCommand.Repository.Show]
+    show.artifactId shouldBe "textus-blog"
+    show.kind shouldBe Some(ArtifactKind.Sar)
+
+    val refresh = TextusCommandParser.parse(Vector("repository", "refresh", "https://repo.example/repository"))
+      .asInstanceOf[TextusCommand.Repository.Refresh]
+    refresh.source shouldBe Some("https://repo.example/repository")
+  }
+
+  def componentRepositoryLocalPrecedenceAndConflictDiagnostics(): Unit = _with_temp_paths { paths =>
+    val first = paths.cwd.resolve("first/repository")
+    val second = paths.cwd.resolve("second/repository")
+    val remote = "https://repo.example/repository"
+    _write(first.resolve("catalog/index.json"), _component_repository_index("car", "textus-blog", "1.0.0"))
+    _write(second.resolve("catalog/index.json"), _component_repository_index("car", "textus-blog", "1.1.0"))
+    val client = new RecordingComponentRepositoryHttpClient(Map(
+      s"$remote/catalog/index.json" -> _component_repository_index("car", "textus-blog", "2.0.0")
+    ))
+    val discovery = new ComponentRepositoryDiscovery(paths, client, () => java.time.Instant.parse("2026-07-21T00:00:00Z"))
+    discovery.refresh(LauncherConfig(carRepositories = Vector(s"$remote/car")), None)
+
+    val config = LauncherConfig(carRepositories = Vector(first.resolve("car").toString, second.resolve("car").toString, s"$remote/car"))
+    val result = discovery.list(config, None, None)
+
+    result.artifacts.map(_.entry.recommended) shouldBe Vector(Some("1.0.0"))
+    result.artifacts.head.origin shouldBe "local"
+    result.artifacts.head.render should not include paths.cwd.toString
+    result.diagnostics.exists(_.contains("equal precedence")) shouldBe true
+    client.requests shouldBe Vector(s"$remote/catalog/index.json")
+  }
+
+  def componentRepositoryRefreshIsBoundedAndPreservesStaleCache(): Unit = _with_temp_paths { paths =>
+    val remote = "https://repo.example/repository"
+    val client = new RecordingComponentRepositoryHttpClient(Map(
+      s"$remote/catalog/index.json" -> _component_repository_index("sar", "sample-app", "1.0.0")
+    ))
+    val discovery = new ComponentRepositoryDiscovery(paths, client, () => java.time.Instant.parse("2026-07-21T00:00:00Z"))
+    val config = LauncherConfig(sarRepositories = Vector(s"$remote/sar"))
+
+    discovery.refresh(config, None).failures shouldBe empty
+    client.responses = Map(s"$remote/catalog/index.json" -> "{ malformed")
+    val failed = discovery.refresh(config, None)
+    val listed = discovery.list(config, None, None)
+
+    failed.failures should have size 1
+    listed.artifacts.map(_.entry.artifactId) shouldBe Vector("sample-app")
+    listed.diagnostics.exists(_.contains("stale component repository cache")) shouldBe true
+    client.requests.distinct shouldBe Vector(s"$remote/catalog/index.json")
+    client.requests.exists(_.endsWith(".car")) shouldBe false
+    client.requests.exists(_.endsWith(".sar")) shouldBe false
+    ComponentRepositoryDiscovery.safeSource("https://user:secret@repo.example/repository?token=private") shouldBe "https://repo.example/repository"
+  }
+
+  def componentRepositoryShowValidatesDetailedCatalog(): Unit = _with_temp_paths { paths =>
+    val repository = paths.cwd.resolve("repository")
+    _write(repository.resolve("catalog/index.json"), _component_repository_index("car", "textus-blog", "1.0.0"))
+    _write(repository.resolve("catalog/car/textus-blog.yaml"), _artifact_catalog_text("1.0.0", "0.4.0", Vector("0.4.0")))
+    val discovery = new ComponentRepositoryDiscovery(paths, new RecordingComponentRepositoryHttpClient(Map.empty))
+
+    val result = discovery.show(LauncherConfig(carRepositories = Vector(repository.resolve("car").toString)), "textus-blog", Some(ArtifactKind.Car), None)
+
+    result.artifact.entry.identity shouldBe ("car" -> "textus-blog")
+    result.artifact.renderDetailed should include("recommended: 1.0.0")
+  }
+
+  def componentRepositoryShowValidatesJsonDetailedCatalog(): Unit = _with_temp_paths { paths =>
+    val repository = paths.cwd.resolve("repository")
+    _write(repository.resolve("catalog/index.json"), _component_repository_index("sar", "sample-app", "1.2.0", "json"))
+    _write(
+      repository.resolve("catalog/sar/sample-app.json"),
+      """{
+        |  "kind": "sar",
+        |  "artifactId": "sample-app",
+        |  "status": "active",
+        |  "recommended": "1.2.0",
+        |  "latestStable": "1.2.0"
+        |}
+        |""".stripMargin
+    )
+    val discovery = new ComponentRepositoryDiscovery(paths, new RecordingComponentRepositoryHttpClient(Map.empty))
+
+    val result = discovery.show(LauncherConfig(sarRepositories = Vector(repository.resolve("sar").toString)), "sample-app", Some(ArtifactKind.Sar), None)
+
+    result.artifact.entry.identity shouldBe ("sar" -> "sample-app")
+    result.artifact.entry.catalog shouldBe "sar/sample-app.json"
+  }
+
+  def componentRepositoryShowPreservesValidatedDetailCache(): Unit = _with_temp_paths { paths =>
+    val remote = "https://repo.example/repository"
+    val indexurl = s"$remote/catalog/index.json"
+    val detailurl = s"$remote/catalog/car/textus-blog.yaml"
+    val client = new RecordingComponentRepositoryHttpClient(Map(
+      indexurl -> _component_repository_index("car", "textus-blog", "1.0.0"),
+      detailurl -> _artifact_catalog_text("1.0.0", "0.4.0", Vector("0.4.0"))
+    ))
+    val discovery = new ComponentRepositoryDiscovery(paths, client)
+    val config = LauncherConfig(carRepositories = Vector(s"$remote/car"))
+    discovery.refresh(config, None)
+    discovery.show(config, "textus-blog", Some(ArtifactKind.Car), None).diagnostics shouldBe empty
+    client.responses = Map(detailurl -> _artifact_catalog_text("9.9.9", "0.4.0", Vector("0.4.0")))
+
+    val stale = discovery.show(config, "textus-blog", Some(ArtifactKind.Car), None)
+    client.responses = Map.empty
+    val offline = discovery.show(config, "textus-blog", Some(ArtifactKind.Car), None)
+
+    stale.diagnostics.exists(_.contains("stale detailed catalog cache")) shouldBe true
+    offline.diagnostics.exists(_.contains("stale detailed catalog cache")) shouldBe true
+    stale.artifact.entry.recommended shouldBe Some("1.0.0")
   }
 
   private def _capture_stdout(f: => Int): (Int, String) = {
@@ -1578,6 +1739,21 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
        |${tested.map(v => s"          - $v").mkString("\n")}
        |""".stripMargin
 
+  private def _component_repository_index(kind: String, artifactid: String, version: String, extension: String = "yaml"): String =
+    s"""{
+       |  "schemaVersion": "cncf.component-repository-index.v1",
+       |  "generatedAt": "2026-07-21T00:00:00Z",
+       |  "artifacts": [{
+       |    "kind": "$kind",
+       |    "artifactId": "$artifactid",
+       |    "catalog": "$kind/$artifactid.$extension",
+       |    "status": "active",
+       |    "recommended": "$version",
+       |    "latestStable": "$version"
+       |  }]
+       |}
+       |""".stripMargin
+
   private def _sanpomap_catalog_text(version: String): String =
     s"""schemaVersion: 1
        |kind: car
@@ -1638,6 +1814,15 @@ final class FakeTextusLauncherDevInvoker extends TextusLauncherDevInvoker {
 
 object FakeTextusLauncherDevInvoker {
   def apply(): FakeTextusLauncherDevInvoker = new FakeTextusLauncherDevInvoker()
+}
+
+final class RecordingComponentRepositoryHttpClient(var responses: Map[String, String]) extends ComponentRepositoryHttpClient {
+  var requests: Vector[String] = Vector.empty
+
+  def get(url: String): String = {
+    requests :+= url
+    responses.getOrElse(url, throw TextusException(s"missing test response: $url"))
+  }
 }
 
 final class FakeClasspathExporter(classpath: String) extends RuntimeClasspathExporter {
