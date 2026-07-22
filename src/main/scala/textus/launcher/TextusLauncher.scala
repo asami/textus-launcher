@@ -9,7 +9,7 @@ import scala.sys.process.*
  * @since   May. 17, 2026
  *  version May. 27, 2026
  *  version Jun. 29, 2026
- * @version Jul. 21, 2026
+ * @version Jul. 22, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
@@ -21,7 +21,12 @@ final class TextusLauncher(
   environment: Map[String, String] = sys.env,
   registrationreporter: TextusControlCenterRegistrationReporter = TextusControlCenterRegistrationReporter.System
 ) {
-  def run(args: Vector[String]): Int = {
+  def run(args: Vector[String]): Int =
+    _launcher_home(args).fold(_run(args)) { case (home, commandargs) =>
+      new TextusLauncher(paths.copy(home = home), runtimeresolver, cncfinvoker, classpathexporter, launcherdevinvoker, environment, registrationreporter).run(commandargs)
+    }
+
+  private def _run(args: Vector[String]): Int = {
     val (configfiles, commandargs) = _take_config_options(args)
     val config = LauncherConfig.load(paths, configfiles, environment)
     _delegate_launcher_dev_dir(config, args) match {
@@ -51,6 +56,18 @@ final class TextusLauncher(
       case execute: TextusCommand.Execute =>
         _run_execute(execute, config)
     }
+  }
+
+  private def _launcher_home(args: Vector[String]): Option[(Path, Vector[String])] = {
+    val launcherscope = args.take(args.indexOf("--") match {
+      case -1 => args.length
+      case index => index
+    })
+    val index = launcherscope.indexOf("--launcher-home")
+    if (index < 0) None
+    else if (index + 1 >= args.length) throw TextusException("--launcher-home requires a directory")
+    else if (launcherscope.indexOf("--launcher-home", index + 1) >= 0) throw TextusException("--launcher-home may be specified only once")
+    else Some(paths.cwd.resolve(args(index + 1)).normalize.toAbsolutePath.normalize -> (args.take(index) ++ args.drop(index + 2)))
   }
 
   private def _run_repository(command: TextusCommand.Repository, config: LauncherConfig): Int = {

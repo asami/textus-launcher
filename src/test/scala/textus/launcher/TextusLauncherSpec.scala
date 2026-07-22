@@ -503,6 +503,7 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     help.contains("development.runtime.dev-dir") shouldBe true
     help.contains("TEXTUS_USE_DEVELOPMENT=true") shouldBe true
     help.contains("TEXTUS_RUNTIME_DEV_DIR") shouldBe true
+    help.contains("--launcher-home <dir> selects an explicit Launcher state-home root") shouldBe true
     help.contains("ancestor and cwd .textus config/launcher files") shouldBe true
     help.contains("~/.textus/launcher.yaml") shouldBe true
     help.contains("Install CLI:") shouldBe true
@@ -737,6 +738,10 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     launcher.run(Vector("runtime", "use", "0.3.0", "--project"))
     _assert_equals(Files.readString(paths.globalVersion).trim, "0.2.0")
     _assert_equals(Files.readString(paths.projectVersion).trim, "0.3.0")
+    val isolatedhome = paths.cwd.resolve("isolated-launcher-home")
+    launcher.run(Vector("--launcher-home", isolatedhome.toString, "runtime", "use", "0.4.0", "--global"))
+    _assert_equals(Files.readString(isolatedhome.resolve(".textus").resolve("version")).trim, "0.4.0")
+    _assert_equals(Files.readString(paths.globalVersion).trim, "0.2.0")
   }
 
   def runtimeUseAutoSelectsProjectWhenTextusDirectoryExists(): Unit = _with_temp_paths { paths =>
@@ -988,6 +993,16 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     invoker.lastArgs.exists(_.startsWith("--textus.server.port=")) shouldBe false
     invoker.lastArgs.exists(_.startsWith("--cncf.server.port=")) shouldBe false
 
+    When("a runtime passthrough argument happens to use the Launcher state-home option name")
+    val passthroughhome = "runtime-passthrough-home"
+    val passthroughcode = launcher.run(Vector("textus-blog:0.1.0", "server", "--", "--launcher-home", passthroughhome))
+
+    Then("the Launcher preserves it for the component runtime without changing its own state home")
+    _assert_equals(passthroughcode, 0)
+    invoker.lastArgs.contains("--launcher-home") shouldBe true
+    invoker.lastArgs.contains(passthroughhome) shouldBe true
+    Files.exists(paths.cwd.resolve(passthroughhome).resolve(".textus")) shouldBe false
+
     When("the launcher delegates the SAR invocation to CNCF")
     val sarcode = launcher.run(Vector("textus-platform.sar:0.1.0", "server"))
 
@@ -1041,6 +1056,8 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     _assert_equals(reporter.starts.head._1.subsystemVersion, Some("0.1.0"))
     _assert_equals(reporter.starts.head._2, Some("secret-token"))
     invoker.lastArgs.last shouldBe "server"
+    _entries(paths).map(_.launcherKind) should contain ("textus")
+    _entries(paths).map(_.stoppedAt.isDefined) should contain (true)
 
     And("a higher-priority explicit disable suppresses inherited registration")
     val inherited = LauncherConfig(

@@ -4,7 +4,7 @@ package textus.launcher
  * @since   May. 17, 2026
  *  version May. 27, 2026
  *  version Jun. 29, 2026
- * @version Jul. 21, 2026
+ * @version Jul. 22, 2026
  * @author  ASAMI, Tomoharu
  */
 enum ArtifactKind {
@@ -431,6 +431,7 @@ object TextusCommandParser {
       |  Config runtime.dev-dir is the configuration equivalent of --runtime-dev-dir.
       |  development.runtime.dev-dir is activated by TEXTUS_USE_DEVELOPMENT=true.
       |  TEXTUS_RUNTIME_DEV_DIR or CNCF_RUNTIME_DEV_DIR overrides the active runtime development checkout.
+      |  --launcher-home <dir> selects an explicit Launcher state-home root for isolated integration tests; omit it in normal operation, where textus <artifact> server uses ~/.cncf and ~/.textus.
       |  --config <file> loads an additional Textus launcher config file.
       |  Textus launcher config loads from ~/.textus/config.yaml and ~/.textus/launcher.yaml, then ancestor and cwd .textus config/launcher files.
       |  Textus launcher config supports yaml/yml, properties/props, and lightweight conf files.
