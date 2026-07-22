@@ -10,6 +10,7 @@ resolvers += "SimpleModeling.org" at "https://www.simplemodeling.org/repository/
 libraryDependencies ++= Seq(
   "org.goldenport" %% "goldenport-launcher-core" % "0.1.0",
   "io.circe" %% "circe-core" % "0.14.6",
+  "io.circe" %% "circe-generic" % "0.14.6",
   "io.circe" %% "circe-parser" % "0.14.6",
   "org.scalatest" %% "scalatest" % "3.2.19" % Test
 )

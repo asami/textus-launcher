@@ -14,6 +14,7 @@ final case class LauncherPaths(
 ) {
   val textusHome: Path = home.resolve(".textus")
   val cncfHome: Path = home.resolve(".cncf")
+  val serverEvidence: Path = cncfHome.resolve("launcher").resolve("server-evidence.json")
   val globalConfig: Path = textusHome.resolve("config.yaml")
   val projectConfig: Path = cwd.resolve(".textus").resolve("config.yaml")
   val globalVersion: Path = textusHome.resolve("version")

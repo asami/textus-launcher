@@ -362,29 +362,63 @@ final class TextusLauncher(
       case Some(dir) => _development_runtime_classpath(paths.cwd.resolve(dir).normalize.toAbsolutePath.normalize)
       case None => runtimeresolver.resolve(runtimeversion, effectiveconfig, paths)
     }
-    val session = _registration_session(command, resolved, runtimeversion, effectiveconfig)
+    val report = _server_report(command, resolved, runtimeversion)
+    val evidencesession = report.map(_local_evidence_session).getOrElse(LocalServerEvidenceSession.noop)
+    val registrationsession = report.map(_registration_session(command, effectiveconfig, _)).getOrElse(TextusControlCenterRegistrationSession.noop)
     val shutdownhook = new Thread(
-      () => session.close(),
-      "textus-control-center-registration-shutdown"
+      () => {
+        registrationsession.close()
+        evidencesession.close()
+      },
+      "textus-server-lifecycle-shutdown"
     )
     Runtime.getRuntime.addShutdownHook(shutdownhook)
     try {
       cncfinvoker.invoke(classpath, cncfargs)
     } finally {
       scala.util.Try(Runtime.getRuntime.removeShutdownHook(shutdownhook))
-      session.close()
+      registrationsession.close()
+      evidencesession.close()
     }
   }
 
-  private def _registration_session(
+  private def _server_report(
     command: TextusCommand.Execute,
     artifact: ResolvedArtifact,
-    runtimeversion: String,
-    config: LauncherConfig
-  ): TextusControlCenterRegistrationSession =
+    runtimeversion: String
+  ): Option[TextusControlCenterRegistrationReport] =
     if (command.mode != "server") {
-      TextusControlCenterRegistrationSession.noop
+      None
     } else {
+      Some(TextusControlCenterRegistrationReport(
+        instanceId = java.util.UUID.randomUUID().toString,
+        target = artifact.selector.name,
+        artifactId = Some(artifact.selector.name),
+        executionMode = "artifact",
+        developmentDirectory = None,
+        subsystemName = Some(artifact.selector.name),
+        subsystemVersion = artifact.selector.version,
+        runtimeVersion = runtimeversion,
+        startedAt = java.time.Instant.now()
+      ))
+    }
+
+  private def _local_evidence_session(
+    report: TextusControlCenterRegistrationReport
+  ): LocalServerEvidenceSession =
+    try {
+      LocalServerEvidenceSession.start(paths, report, "textus")
+    } catch {
+      case _: Throwable =>
+        Console.err.println("warning: local CNCF server evidence could not be recorded; continuing server startup.")
+        LocalServerEvidenceSession.noop
+    }
+
+  private def _registration_session(
+    command: TextusCommand.Execute,
+    config: LauncherConfig,
+    report: TextusControlCenterRegistrationReport
+  ): TextusControlCenterRegistrationSession = {
       val registration = config.textusControlCenterRegistration.map(value => value -> environment.get(value.tokenEnv)).orElse {
         Option.when(!config.textusControlCenterRegistrationEnabled.contains(false))(
           TextusControlCenterStandaloneLocator.resolve(paths).map { value =>
@@ -398,17 +432,7 @@ final class TextusLauncher(
           try {
             registrationreporter.start(
               configuration,
-              TextusControlCenterRegistrationReport(
-                instanceId = java.util.UUID.randomUUID().toString,
-                target = artifact.selector.name,
-                artifactId = Some(artifact.selector.name),
-                executionMode = "artifact",
-                developmentDirectory = None,
-                subsystemName = Some(artifact.selector.name),
-                subsystemVersion = artifact.selector.version,
-                runtimeVersion = runtimeversion,
-                startedAt = java.time.Instant.now()
-              ),
+              report,
               token
             )
           } catch {
