@@ -43,6 +43,7 @@ object TextusLauncherSpec {
     spec.executionRewritesToCncfArgs()
     spec.serverExecutionDelegatesDefaultPortResolutionToRuntime()
     spec.textusControlCenterRegistrationLifecycle()
+    spec.localServerEvidenceRetentionAndRecovery()
     spec.standaloneControlCenterLocatorLifecycle()
     spec.textusControlCenterRegistrationHttpLifecycle()
     spec.lifecycleSupervisorDelegateLifecycle()
@@ -263,6 +264,10 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
 
       "canonical server commands report one Textus Control Center lifecycle" in {
         textusControlCenterRegistrationLifecycle()
+      }
+
+      "retain bounded shared evidence and preserve malformed evidence for recovery" in {
+        localServerEvidenceRetentionAndRecovery()
       }
 
       "canonical server commands resolve one standalone Control Center locator" in {
@@ -1067,6 +1072,45 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     outageinvoker.lastArgs.last shouldBe "server"
   }
 
+  def localServerEvidenceRetentionAndRecovery(): Unit = _with_temp_paths { paths =>
+    import LocalServerEvidenceSnapshot.given
+    import io.circe.syntax.*
+
+    Given("stale, bounded, malformed, and independently written shared evidence")
+    val now = java.time.Instant.now()
+    val stale = LocalServerEvidenceEntry("textus", "stale", "stale", Some("stale"), "artifact", None, None, None, "0.5.0", now.minus(LocalServerEvidenceStore.Retention).minusSeconds(1), now.minus(LocalServerEvidenceStore.Retention).minusSeconds(1), Some(now.minus(LocalServerEvidenceStore.Retention).minusSeconds(1)))
+    _write(paths.serverEvidence, LocalServerEvidenceSnapshot(LocalServerEvidenceSnapshot.Schema, Vector(stale)).asJson.noSpaces)
+    val store = LocalServerEvidenceStore(paths)
+
+    When("a canonical Launcher update follows the retention boundary")
+    store.started(_local_evidence_report("fresh"), "textus")
+    val retained = _entries(paths).map(_.instanceId)
+
+    And("a bounded store receives one entry beyond its maximum")
+    val bounded = Vector.tabulate(LocalServerEvidenceStore.MaximumEntries)(index =>
+      LocalServerEvidenceEntry("textus", s"bounded-$index", s"bounded-$index", Some(s"bounded-$index"), "artifact", None, None, None, "0.5.0", now, now, None)
+    )
+    _write(paths.serverEvidence, LocalServerEvidenceSnapshot(LocalServerEvidenceSnapshot.Schema, bounded).asJson.noSpaces)
+    store.started(_local_evidence_report("bounded-fresh"), "textus")
+    val capped = _entries(paths).map(_.instanceId)
+
+    And("the next update encounters malformed content before an independent writer update")
+    _write(paths.serverEvidence, "{malformed")
+    store.started(_local_evidence_report("recovered"), "textus")
+    LocalServerEvidenceStore(paths).started(_local_evidence_report("cncf-writer"), "cncf")
+    val recovered = _entries(paths).map(_.instanceId)
+    val files = Files.list(paths.serverEvidence.getParent)
+    val recovery = try files.iterator.asScala.toVector.find(_.getFileName.toString.startsWith("server-evidence.recovery-")) finally files.close()
+
+    Then("stale entries are pruned, mutation order enforces the cap, malformed bytes are retained, and writers preserve each other")
+    retained shouldBe Vector("fresh")
+    capped should have size LocalServerEvidenceStore.MaximumEntries
+    capped should not contain "bounded-0"
+    capped should contain("bounded-fresh")
+    recovered should contain allOf ("recovered", "cncf-writer")
+    recovery.map(Files.readString) shouldBe Some("{malformed")
+  }
+
   def standaloneControlCenterLocatorLifecycle(): Unit = _with_temp_paths { paths =>
     Given("a machine-local standalone Control Center locator and owner-only launcher token")
     val carrepo = paths.cwd.resolve("repo").resolve("car")
@@ -1705,6 +1749,25 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     Files.createDirectories(path.getParent)
     Files.writeString(path, value)
   }
+
+  private def _entries(paths: LauncherPaths): Vector[LocalServerEvidenceEntry] = {
+    import LocalServerEvidenceSnapshot.given
+    import io.circe.parser.decode
+    decode[LocalServerEvidenceSnapshot](Files.readString(paths.serverEvidence)).toOption.map(_.entries).getOrElse(Vector.empty)
+  }
+
+  private def _local_evidence_report(instanceid: String): TextusControlCenterRegistrationReport =
+    TextusControlCenterRegistrationReport(
+      instanceId = instanceid,
+      target = instanceid,
+      artifactId = Some(instanceid),
+      executionMode = "artifact",
+      developmentDirectory = None,
+      subsystemName = None,
+      subsystemVersion = None,
+      runtimeVersion = "0.5.0-SNAPSHOT",
+      startedAt = java.time.Instant.now()
+    )
 
   private def _with_http_repository(files: Map[String, String])(f: String => Unit): Unit = {
     val server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0)

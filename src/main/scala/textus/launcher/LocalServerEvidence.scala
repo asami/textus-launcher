@@ -2,7 +2,7 @@ package textus.launcher
 
 import java.nio.charset.StandardCharsets
 import java.nio.channels.FileChannel
-import java.nio.file.{Files, StandardCopyOption}
+import java.nio.file.{AtomicMoveNotSupportedException, Files, StandardCopyOption}
 import java.nio.file.StandardOpenOption.{CREATE, WRITE}
 import java.time.{Duration, Instant}
 import java.util.concurrent.atomic.AtomicBoolean
@@ -69,16 +69,16 @@ final class LocalServerEvidenceStore(paths: LauncherPaths) {
     }
 
   def alive(instanceid: String): Unit =
-    _update(_.map { entry =>
-      if (entry.instanceId == instanceid && entry.stoppedAt.isEmpty) entry.copy(lastSeenAt = Instant.now()) else entry
+    _update(_touch(_, instanceid) { entry =>
+      if (entry.stoppedAt.isEmpty) Some(entry.copy(lastSeenAt = Instant.now())) else None
     })
 
   def stopped(instanceid: String): Unit =
-    _update(_.map { entry =>
-      if (entry.instanceId == instanceid && entry.stoppedAt.isEmpty) {
+    _update(_touch(_, instanceid) { entry =>
+      if (entry.stoppedAt.isEmpty) {
         val now = Instant.now()
-        entry.copy(lastSeenAt = now, stoppedAt = Some(now))
-      } else entry
+        Some(entry.copy(lastSeenAt = now, stoppedAt = Some(now)))
+      } else None
     })
 
   private def _update(f: Vector[LocalServerEvidenceEntry] => Vector[LocalServerEvidenceEntry]): Unit = LocalServerEvidenceStore.lock.synchronized {
@@ -88,7 +88,7 @@ final class LocalServerEvidenceStore(paths: LauncherPaths) {
       val lock = channel.lock()
       try {
         val snapshot = _load()
-        val updated = LocalServerEvidenceSnapshot(LocalServerEvidenceSnapshot.Schema, f(snapshot.entries))
+        val updated = LocalServerEvidenceSnapshot(LocalServerEvidenceSnapshot.Schema, _retain(f(snapshot.entries), Instant.now()))
         val temporary = Files.createTempFile(paths.serverEvidence.getParent, ".server-evidence-", ".json")
         try {
           Files.writeString(temporary, updated.asJson.noSpaces + "\n", StandardCharsets.UTF_8)
@@ -110,10 +110,33 @@ final class LocalServerEvidenceStore(paths: LauncherPaths) {
     else
       decode[LocalServerEvidenceSnapshot](Files.readString(paths.serverEvidence, StandardCharsets.UTF_8)).toOption.
         filter(_.schema == LocalServerEvidenceSnapshot.Schema).
-        getOrElse(LocalServerEvidenceSnapshot(LocalServerEvidenceSnapshot.Schema, Vector.empty))
+        getOrElse(_recover_malformed())
+
+  private def _recover_malformed(): LocalServerEvidenceSnapshot = {
+    val recovery = paths.serverEvidence.resolveSibling(s"server-evidence.recovery-${java.util.UUID.randomUUID().toString}.json")
+    try Files.move(paths.serverEvidence, recovery, StandardCopyOption.ATOMIC_MOVE)
+    catch {
+      case _: AtomicMoveNotSupportedException => Files.move(paths.serverEvidence, recovery)
+    }
+    LocalServerEvidenceSnapshot(LocalServerEvidenceSnapshot.Schema, Vector.empty)
+  }
+
+  private def _touch(
+    entries: Vector[LocalServerEvidenceEntry],
+    instanceid: String
+  )(f: LocalServerEvidenceEntry => Option[LocalServerEvidenceEntry]): Vector[LocalServerEvidenceEntry] =
+    entries.find(_.instanceId == instanceid).flatMap(f) match {
+      case Some(updated) => entries.filterNot(_.instanceId == instanceid) :+ updated
+      case None => entries
+    }
+
+  private def _retain(entries: Vector[LocalServerEvidenceEntry], now: Instant): Vector[LocalServerEvidenceEntry] =
+    entries.filter(entry => !entry.lastSeenAt.plus(LocalServerEvidenceStore.Retention).isBefore(now)).takeRight(LocalServerEvidenceStore.MaximumEntries)
 }
 
 object LocalServerEvidenceStore {
+  val Retention: Duration = Duration.ofDays(30)
+  val MaximumEntries = 512
   private val lock = new Object
 }
 
