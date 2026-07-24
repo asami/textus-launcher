@@ -1,12 +1,15 @@
-# Standalone Lifecycle Delegation
+# Provisional Launcher Lifecycle Delegation
 
-status = implemented
-scope = Textus Control Center Phase 4
+status = superseded-by-phase-4-reopen
+scope = Textus Control Center Phase 4 transition baseline
 
-`textus-launcher` does not create a second lifecycle owner. Repository-CAR
-lifecycle requests use the same authenticated loopback CNCF launcher supervisor
-contract as development-directory requests. The supervisor owns request,
-idempotency, child-process, and instance correlation state below `~/.cncf/`.
+`textus-launcher` does not create lifecycle ownership. The former loopback CNCF
+launcher-supervisor delegation is a transition baseline, superseded by
+`textus-supervisor` as the lifecycle authority. In standalone operation Control
+Center embeds that supervisor; future distributed placement preserves the same
+authenticated command/result contract. Textus Launcher retains common evidence
+and bounded best-effort notification only, so Control Center availability never
+blocks `textus <artifact> server`.
 
 The launcher must preserve safe `accepted`, `running`, `stopped`, `rejected`,
 `failed`, and `timed-out` results, and must not discover or signal arbitrary

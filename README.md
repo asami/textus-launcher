@@ -178,6 +178,11 @@ credential from `token-env`; the credential value is neither written to config
 nor printed. Registration uses bounded requests. Missing credentials or
 unreachable Textus Control Center do not prevent the subsystem server from starting.
 
+Registration is an observation channel, not lifecycle authority. Reopened
+Phase 4 moves lifecycle ownership to `textus-supervisor`; launcher evidence and
+notification remain best effort and never make Control Center availability a
+canonical `textus <artifact> server` prerequisite.
+
 When `base-url` is omitted, registration waits until the CNCF runtime has bound
 and uses its actual loopback endpoint. This includes additional instances
 allocated from the dynamic port range. Set `base-url` only when the registered

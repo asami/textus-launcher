@@ -14,7 +14,7 @@ import scala.jdk.CollectionConverters.*
  * @since   May. 17, 2026
  *  version May. 27, 2026
  *  version Jun. 29, 2026
- * @version Jul. 22, 2026
+ * @version Jul. 24, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -77,15 +77,17 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       "parser" in {
         Given("the textus launcher scenario: parser")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(parser())
         Then("the executable specification holds through scenario-specific expectations")
-        parser()
+        outcome.get shouldBe ()
       }
 
       "runtime catalog parse and selector resolution" in {
         Given("the textus launcher scenario: runtime catalog parse and selector resolution")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(runtimeCatalogParseAndSelectorResolution())
         Then("the executable specification holds through scenario-specific expectations")
-        runtimeCatalogParseAndSelectorResolution()
+        outcome.get shouldBe ()
       }
 
     }
@@ -94,57 +96,65 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       "launcher version" in {
         Given("the textus launcher scenario: launcher version")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(launcherVersion())
         Then("the executable specification holds through scenario-specific expectations")
-        launcherVersion()
+        outcome.get shouldBe ()
       }
 
       "config merge" in {
         Given("the textus launcher scenario: config merge")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(configMerge())
         Then("the executable specification holds through scenario-specific expectations")
-        configMerge()
+        outcome.get shouldBe ()
       }
 
       "workspace root config applies to nested cwd" in {
         Given("the textus launcher scenario: workspace root config applies to nested cwd")
         When("the launcher loads config from a nested sample directory")
+        val outcome = scala.util.Try(workspaceRootConfigAppliesToNestedCwd())
         Then("the executable specification holds through inherited root config")
-        workspaceRootConfigAppliesToNestedCwd()
+        outcome.get shouldBe ()
       }
 
       "launcher config supports properties and conf files" in {
         Given("the textus launcher scenario: launcher config supports properties and conf files")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(launcherConfigSupportsPropertiesAndConfFiles())
         Then("the executable specification holds through scenario-specific expectations")
-        launcherConfigSupportsPropertiesAndConfFiles()
+        outcome.get shouldBe ()
       }
 
       "launcher dev dir delegates to development launcher" in {
         Given("a global Textus launcher config selects a development launcher checkout")
         When("the launcher command is run")
+        val outcome = scala.util.Try(launcherDevDirDelegatesToDevelopmentLauncher())
         Then("the configured checkout receives the original command arguments")
-        launcherDevDirDelegatesToDevelopmentLauncher()
+        outcome.get shouldBe ()
       }
 
       "launcher dev dir rejects stale development classpath" in {
         Given("a Textus development launcher classpath without the Textus main class")
         When("the launcher tries to delegate")
+        val outcome = scala.util.Try(launcherDevDirRejectsStaleDevelopmentClasspath())
         Then("the stale classpath is rejected before starting a process")
-        launcherDevDirRejectsStaleDevelopmentClasspath()
+        outcome.get shouldBe ()
       }
 
       "runtime development config" in {
         Given("a Textus launcher config declares a development CNCF runtime checkout")
         When("development mode or environment override is supplied")
+        val outcome = scala.util.Try(runtimeDevelopmentConfig())
         Then("the runtime development directory is activated through launcher config")
-        runtimeDevelopmentConfig()
+        outcome.get shouldBe ()
       }
 
       "local repository resolves artifact without config" in {
         Given("the textus launcher scenario: local repository resolves artifact without config")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(localRepositoryResolvesArtifactWithoutConfig())
         Then("the executable specification holds through scenario-specific expectations")
-        localRepositoryResolvesArtifactWithoutConfig()
+        outcome.get shouldBe ()
       }
 
     }
@@ -153,99 +163,113 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       "runtime version" in {
         Given("the textus launcher scenario: runtime version")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(runtimeVersion())
         Then("the executable specification holds through scenario-specific expectations")
-        runtimeVersion()
+        outcome.get shouldBe ()
       }
 
       "runtime help" in {
         Given("the textus launcher scenario: runtime help")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(runtimeHelp())
         Then("the executable specification holds through scenario-specific expectations")
-        runtimeHelp()
+        outcome.get shouldBe ()
       }
 
       "runtime version precedence" in {
         Given("the textus launcher scenario: runtime version precedence")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(runtimeVersionPrecedence())
         Then("the executable specification holds through scenario-specific expectations")
-        runtimeVersionPrecedence()
+        outcome.get shouldBe ()
       }
 
       "runtime use writes expected files" in {
         Given("the textus launcher scenario: runtime use writes expected files")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(runtimeUseWritesExpectedFiles())
         Then("the executable specification holds through scenario-specific expectations")
-        runtimeUseWritesExpectedFiles()
+        outcome.get shouldBe ()
       }
 
       "runtime use auto selects project when textus directory exists" in {
         Given("the textus launcher scenario: runtime use auto selects project when textus directory exists")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(runtimeUseAutoSelectsProjectWhenTextusDirectoryExists())
         Then("the executable specification holds through scenario-specific expectations")
-        runtimeUseAutoSelectsProjectWhenTextusDirectoryExists()
+        outcome.get shouldBe ()
       }
 
       "install cli writes user facing command" in {
         Given("the textus launcher scenario: install cli writes user facing command")
         When("the launcher installs a domain command")
+        val outcome = scala.util.Try(installCliWritesUserFacingCommand())
         Then("the command delegates to textus command with file parameter expansion")
-        installCliWritesUserFacingCommand()
+        outcome.get shouldBe ()
       }
 
       "install cli falls back from stale local catalog to remote CAR" in {
         Given("a stale local CAR catalog whose archive is missing")
         When("the launcher installs a command for a published CAR available remotely")
+        val outcome = scala.util.Try(installCliFallsBackFromStaleLocalCatalogToRemoteCar())
         Then("the command wrapper is generated from the remote CAR version")
-        installCliFallsBackFromStaleLocalCatalogToRemoteCar()
+        outcome.get shouldBe ()
       }
 
       "missing local and remote catalog archives report both diagnostics" in {
         Given("local and remote catalogs whose selected archives are both missing")
         When("the resolver cannot locate the requested CAR")
+        val outcome = scala.util.Try(missingLocalAndRemoteCatalogArchivesReportBothDiagnostics())
         Then("the error identifies both failed catalog sources")
-        missingLocalAndRemoteCatalogArchivesReportBothDiagnostics()
+        outcome.get shouldBe ()
       }
 
       "runtime catalog commands" in {
         Given("the textus launcher scenario: runtime catalog commands")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(runtimeCatalogCommands())
         Then("the executable specification holds through scenario-specific expectations")
-        runtimeCatalogCommands()
+        outcome.get shouldBe ()
       }
 
       "runtime current warns when cached recommended is stale" in {
         Given("the textus launcher scenario: runtime current warns when cached recommended is stale")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(runtimeCurrentWarnsWhenCachedRecommendedIsStale())
         Then("the executable specification holds through scenario-specific expectations")
-        runtimeCurrentWarnsWhenCachedRecommendedIsStale()
+        outcome.get shouldBe ()
       }
 
       "runtime conflict defaults to error" in {
         Given("the textus launcher scenario: runtime conflict defaults to error")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(runtimeConflictDefaultsToError())
         Then("the executable specification holds through scenario-specific expectations")
-        runtimeConflictDefaultsToError()
+        outcome.get shouldBe ()
       }
 
       "runtime conflict can use newest policy" in {
         Given("the textus launcher scenario: runtime conflict can use newest policy")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(runtimeConflictCanUseNewestPolicy())
         Then("the executable specification holds through scenario-specific expectations")
-        runtimeConflictCanUseNewestPolicy()
+        outcome.get shouldBe ()
       }
 
       "runtime command does not load cncf" in {
         Given("the textus launcher scenario: runtime command does not load cncf")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(runtimeCommandDoesNotLoadCncf())
         Then("the executable specification holds through scenario-specific expectations")
-        runtimeCommandDoesNotLoadCncf()
+        outcome.get shouldBe ()
       }
 
       "latest runtime is concrete" in {
         Given("the textus launcher scenario: latest runtime is concrete")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(latestRuntimeIsConcrete())
         Then("the executable specification holds through scenario-specific expectations")
-        latestRuntimeIsConcrete()
+        outcome.get shouldBe ()
       }
 
     }
@@ -254,8 +278,9 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       "execution rewrites to cncf args" in {
         Given("the textus launcher scenario: execution rewrites to cncf args")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(executionRewritesToCncfArgs())
         Then("the executable specification holds through scenario-specific expectations")
-        executionRewritesToCncfArgs()
+        outcome.get shouldBe ()
       }
 
       "server execution delegates default port resolution to the runtime" in {
@@ -281,57 +306,65 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       "snapshot artifact does not fall through to cache or public" in {
         Given("the textus launcher scenario: snapshot artifact does not fall through to cache or public")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(snapshotArtifactDoesNotFallThroughToCacheOrPublic())
         Then("the executable specification holds through scenario-specific expectations")
-        snapshotArtifactDoesNotFallThroughToCacheOrPublic()
+        outcome.get shouldBe ()
       }
 
       "artifact catalog uses current compatible runtime by default" in {
         Given("the textus launcher scenario: artifact catalog uses current compatible runtime by default")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(artifactCatalogUsesCurrentCompatibleRuntimeByDefault())
         Then("the executable specification holds through scenario-specific expectations")
-        artifactCatalogUsesCurrentCompatibleRuntimeByDefault()
+        outcome.get shouldBe ()
       }
 
       "artifact catalog can select latest tested runtime" in {
         Given("the textus launcher scenario: artifact catalog can select latest tested runtime")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(artifactCatalogCanSelectLatestTestedRuntime())
         Then("the executable specification holds through scenario-specific expectations")
-        artifactCatalogCanSelectLatestTestedRuntime()
+        outcome.get shouldBe ()
       }
 
       "artifact catalog can select latest compatible runtime" in {
         Given("the textus launcher scenario: artifact catalog can select latest compatible runtime")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(artifactCatalogCanSelectLatestCompatibleRuntime())
         Then("the executable specification holds through scenario-specific expectations")
-        artifactCatalogCanSelectLatestCompatibleRuntime()
+        outcome.get shouldBe ()
       }
 
       "artifact catalog can select newest compatible runtime" in {
         Given("the textus launcher scenario: artifact catalog can select newest compatible runtime")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(artifactCatalogCanSelectNewestCompatibleRuntime())
         Then("the executable specification holds through scenario-specific expectations")
-        artifactCatalogCanSelectNewestCompatibleRuntime()
+        outcome.get shouldBe ()
       }
 
       "artifact catalog includes dependency requirements" in {
         Given("the textus launcher scenario: artifact catalog includes dependency requirements")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(artifactCatalogIncludesDependencyRequirements())
         Then("the executable specification holds through scenario-specific expectations")
-        artifactCatalogIncludesDependencyRequirements()
+        outcome.get shouldBe ()
       }
 
       "artifact catalog does not fallback to metadata when catalog rejects version" in {
         Given("the textus launcher scenario: artifact catalog does not fallback to metadata when catalog rejects version")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(artifactCatalogDoesNotFallbackToMetadataWhenCatalogRejectsVersion())
         Then("the executable specification holds through scenario-specific expectations")
-        artifactCatalogDoesNotFallbackToMetadataWhenCatalogRejectsVersion()
+        outcome.get shouldBe ()
       }
 
       "explicit runtime is validated against artifact requirement" in {
         Given("the textus launcher scenario: explicit runtime is validated against artifact requirement")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(explicitRuntimeIsValidatedAgainstArtifactRequirement())
         Then("the executable specification holds through scenario-specific expectations")
-        explicitRuntimeIsValidatedAgainstArtifactRequirement()
+        outcome.get shouldBe ()
       }
 
     }
@@ -340,8 +373,9 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       "no CNCF runtime library dependencies" in {
         Given("the textus launcher scenario: no runtime library dependencies")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(noCncfRuntimeLibraryDependencies())
         Then("the executable specification holds through scenario-specific expectations")
-        noCncfRuntimeLibraryDependencies()
+        outcome.get shouldBe ()
       }
 
     }
@@ -350,8 +384,9 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       "help explains local repository" in {
         Given("the textus launcher scenario: help explains local repository")
         When("the launcher behavior is exercised")
+        val outcome = scala.util.Try(helpExplainsLocalRepository())
         Then("the executable specification holds through scenario-specific expectations")
-        helpExplainsLocalRepository()
+        outcome.get shouldBe ()
       }
 
     }
@@ -360,43 +395,49 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       "parse list, show, and refresh commands" in {
         Given("component repository discovery command arguments")
         When("the Textus command parser reads list, show, and refresh forms")
+        val outcome = scala.util.Try(componentRepositoryCommandParser())
         Then("artifact kind and configured source selectors remain explicit")
-        componentRepositoryCommandParser()
+        outcome.get shouldBe ()
       }
 
       "prefer local entries and diagnose equal-precedence conflicts" in {
         Given("local and cached indexes that expose overlapping component identities")
         When("Textus lists component repository artifacts without network access")
+        val outcome = scala.util.Try(componentRepositoryLocalPrecedenceAndConflictDiagnostics())
         Then("local entries win and equal-precedence local conflicts are deterministic")
-        componentRepositoryLocalPrecedenceAndConflictDiagnostics()
+        outcome.get shouldBe ()
       }
 
       "bound refresh and preserve stale cache" in {
         Given("an explicitly configured remote repository and a previously valid cached index")
         When("refresh later receives a malformed index")
+        val outcome = scala.util.Try(componentRepositoryRefreshIsBoundedAndPreservesStaleCache())
         Then("only the fixed index URL is requested and the stale valid cache remains listable")
-        componentRepositoryRefreshIsBoundedAndPreservesStaleCache()
+        outcome.get shouldBe ()
       }
 
       "validate detailed catalogs on show" in {
         Given("a local repository index and its detailed artifact catalog")
         When("Textus shows the selected component")
+        val outcome = scala.util.Try(componentRepositoryShowValidatesDetailedCatalog())
         Then("the index identity and selectors are checked against the detailed catalog")
-        componentRepositoryShowValidatesDetailedCatalog()
+        outcome.get shouldBe ()
       }
 
       "validate JSON detailed catalogs on show" in {
         Given("a local repository index that references a JSON artifact catalog")
         When("Textus shows the selected component")
+        val outcome = scala.util.Try(componentRepositoryShowValidatesJsonDetailedCatalog())
         Then("the JSON identity and selectors satisfy the same detail contract as YAML")
-        componentRepositoryShowValidatesJsonDetailedCatalog()
+        outcome.get shouldBe ()
       }
 
       "preserve validated detail cache" in {
         Given("a validated remote detailed catalog and a later mismatched response")
         When("Textus shows the same component again")
+        val outcome = scala.util.Try(componentRepositoryShowPreservesValidatedDetailCache())
         Then("the mismatched response is not cached and stale validated detail use is diagnosed")
-        componentRepositoryShowPreservesValidatedDetailCache()
+        outcome.get shouldBe ()
       }
     }
 
@@ -532,22 +573,34 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     Given("a runtime development directory is provided explicitly")
     val devdir = paths.cwd.resolve("cncf-dev")
     val classdir = devdir.resolve("target").resolve("classes")
+    Files.createDirectories(classdir)
+    _write(devdir.resolve("target").resolve("cncf.d").resolve("runtime-classpath.txt"), classdir.toString)
     val devinvoker = FakeInvoker()
-    val exporter = FakeClasspathExporter(classdir.toString)
-    val devlauncher = new TextusLauncher(paths, FakeResolver(), devinvoker, exporter)
+    val devlauncher = new TextusLauncher(paths, FakeResolver(), devinvoker)
 
     When("the launcher version command is executed against the runtime development directory")
     val devcode = devlauncher.run(Vector("--runtime-dev-dir", devdir.toString, "version"))
 
     Then("the launcher invokes the development CNCF runtime version command")
     _assert_equals(devcode, 0)
-    _assert_equals(exporter.projects, Vector(devdir))
     _assert_equals(devinvoker.lastClasspath, Vector(classdir))
     _assert_equals(devinvoker.lastArgs, Vector("version"))
     _assert_equals(
       TextusCommandParser.parse(Vector("--runtime-dev-dir", devdir.toString, "version")),
       TextusCommand.Runtime.Version(None, Some(devdir.toString))
     )
+
+    Given("a runtime development directory without a prepared classpath")
+    val missingdir = paths.cwd.resolve("cncf-missing")
+    val missinglauncher = new TextusLauncher(paths, FakeResolver(), FakeInvoker())
+
+    When("the launcher version command is executed against the unprepared directory")
+    val failure = intercept[TextusException] {
+      missinglauncher.run(Vector("--runtime-dev-dir", missingdir.toString, "version"))
+    }
+
+    Then("the launcher rejects the invocation without using SBT")
+    failure.getMessage.contains("development runtime classpath not found") shouldBe true
   }
 
   def runtimeDevelopmentConfig(): Unit = _with_temp_paths { paths =>
@@ -694,7 +747,7 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
          |      dir: $launcherdevdir
          |""".stripMargin)
     val invoker = FakeTextusLauncherDevInvoker()
-    val launcher = new TextusLauncher(paths, FakeResolver(), FakeInvoker(), SbtRuntimeClasspathExporter, invoker)
+    val launcher = new TextusLauncher(paths, FakeResolver(), FakeInvoker(), invoker)
 
     val code = launcher.run(Vector("launcher", "version"))
 
@@ -1952,19 +2005,6 @@ final class RecordingComponentRepositoryHttpClient(var responses: Map[String, St
     requests :+= url
     responses.getOrElse(url, throw TextusException(s"missing test response: $url"))
   }
-}
-
-final class FakeClasspathExporter(classpath: String) extends RuntimeClasspathExporter {
-  var projects: Vector[Path] = Vector.empty
-
-  def exportRuntimeClasspath(project: Path): String = {
-    projects :+= project
-    classpath
-  }
-}
-
-object FakeClasspathExporter {
-  def apply(classpath: String): FakeClasspathExporter = new FakeClasspathExporter(classpath)
 }
 
 final class FakeInvoker extends CncfInvoker {

@@ -9,21 +9,20 @@ import scala.sys.process.*
  * @since   May. 17, 2026
  *  version May. 27, 2026
  *  version Jun. 29, 2026
- * @version Jul. 22, 2026
+ * @version Jul. 24, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
   paths: LauncherPaths = LauncherPaths(),
   runtimeresolver: CncfRuntimeResolver = CoursierCncfRuntimeResolver(),
   cncfinvoker: CncfInvoker = CncfInvoker(),
-  classpathexporter: RuntimeClasspathExporter = SbtRuntimeClasspathExporter,
   launcherdevinvoker: TextusLauncherDevInvoker = TextusLauncherDevInvoker.System,
   environment: Map[String, String] = sys.env,
   registrationreporter: TextusControlCenterRegistrationReporter = TextusControlCenterRegistrationReporter.System
 ) {
   def run(args: Vector[String]): Int =
     _launcher_home(args).fold(_run(args)) { case (home, commandargs) =>
-      new TextusLauncher(paths.copy(home = home), runtimeresolver, cncfinvoker, classpathexporter, launcherdevinvoker, environment, registrationreporter).run(commandargs)
+      new TextusLauncher(paths.copy(home = home), runtimeresolver, cncfinvoker, launcherdevinvoker, environment, registrationreporter).run(commandargs)
     }
 
   private def _run(args: Vector[String]): Int = {
@@ -258,10 +257,7 @@ final class TextusLauncher(
       if (Files.isRegularFile(file) && Files.size(file) > 0L) {
         Files.readString(file, StandardCharsets.UTF_8).trim
       } else {
-        val exported = classpathexporter.exportRuntimeClasspath(project)
-        Files.createDirectories(file.getParent)
-        Files.writeString(file, exported + "\n", StandardCharsets.UTF_8)
-        exported
+        throw TextusException(s"development runtime classpath not found: ${file}; prepare it before invoking textus")
       }
     val entries = classpath.split(File.pathSeparator).toVector.map(_.trim).filter(_.nonEmpty).map(Path.of(_))
     if (entries.isEmpty)

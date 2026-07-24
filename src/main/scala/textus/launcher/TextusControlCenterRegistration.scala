@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 /*
  * @since   Jul. 18, 2026
- * @version Jul. 19, 2026
+ * @version Jul. 24, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class TextusControlCenterRegistrationConfig(
@@ -115,16 +115,21 @@ private final class SystemTextusControlCenterRegistrationReporter extends Textus
     report: TextusControlCenterRegistrationReport,
     token: String
   ): TextusControlCenterRegistrationSession = {
-    _post_best_effort(config, report, token, "register-subsystem", "starting")
+    val registered = new AtomicBoolean(_post_best_effort(config, report, token, "register-subsystem", "starting"))
     val executor = Executors.newSingleThreadScheduledExecutor(_daemon_thread_factory)
     val task = new Runnable {
       def run(): Unit =
-        _post_best_effort(config, report, token, "heartbeat-subsystem", "running")
+        if (registered.get) {
+          if (!_post_best_effort(config, report, token, "heartbeat-subsystem", "running"))
+            registered.set(false)
+        } else {
+          registered.set(_post_best_effort(config, report, token, "register-subsystem", "starting"))
+        }
     }
     executor.scheduleAtFixedRate(task, config.heartbeatInterval.toMillis, config.heartbeatInterval.toMillis, TimeUnit.MILLISECONDS)
     ActiveTextusControlCenterRegistrationSession(
       executor,
-      () => _post_best_effort(config, report, token, "deregister-subsystem", "stopped")
+      () => if (registered.get) _post_best_effort(config, report, token, "deregister-subsystem", "stopped")
     )
   }
 
@@ -164,13 +169,19 @@ private final class SystemTextusControlCenterRegistrationReporter extends Textus
     token: String,
     operation: String,
     state: String
-  ): Unit =
+  ): Boolean =
     try {
       val status = _post(config, report, token, operation, state)
-      if (status < 200 || status >= 300)
+      if (status < 200 || status >= 300) {
         _warning(s"$operation request to ${_operation_endpoint(config, operation)} returned HTTP $status")
+        false
+      } else {
+        true
+      }
     } catch {
-      case _: Throwable => _warning(s"$operation connection to ${_operation_endpoint(config, operation)} failed")
+      case _: Throwable =>
+        _warning(s"$operation connection to ${_operation_endpoint(config, operation)} failed")
+        false
     }
 
   private def _post(
