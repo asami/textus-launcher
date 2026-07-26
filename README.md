@@ -84,18 +84,11 @@ Textus launcher config is intentionally lightweight. It supports `yaml` /
 JSON, XML, and full HOCON are runtime/application config formats, not launcher
 config formats.
 
-Use `--runtime-dev-dir <dir>` or `runtime.dev-dir` to run against a local CNCF
-runtime checkout instead of a published runtime artifact. `TEXTUS_RUNTIME_DEV_DIR`
-or `CNCF_RUNTIME_DEV_DIR` overrides the configured runtime development checkout.
-`development.runtime.dev-dir` is a development candidate and is activated only
-when `TEXTUS_USE_DEVELOPMENT=true` or `CNCF_USE_DEVELOPMENT=true`.
-
 Example:
 
 ```yaml
 runtime:
   version: recommended
-  dev-dir: /path/to/cncf-runtime
   catalog:
     url: https://www.simplemodeling.org/repository/textus/runtime-catalog.yaml
 

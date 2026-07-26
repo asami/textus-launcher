@@ -4,7 +4,7 @@ package textus.launcher
  * @since   May. 17, 2026
  *  version May. 27, 2026
  *  version Jun. 29, 2026
- * @version Jul. 22, 2026
+ * @version Jul. 27, 2026
  * @author  ASAMI, Tomoharu
  */
 enum ArtifactKind {
@@ -380,15 +380,15 @@ object TextusCommandParser {
     """Usage:
       |  textus --version
       |  textus version
-      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] version
+      |  textus [--runtime <version>] version
       |  textus launcher version
       |  textus install-cli <command-name> <artifact> --operation-prefix <component.service> [--file-param <name>...] [--bin-dir <dir>] [--overwrite]
-      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] <target> server [options...]
-      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] <target> client [args...]
-      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] <target> command <operation> [params...]
-      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] server  <artifact>[:<version>] [options...]   (compatibility)
-      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] client  <artifact>[:<version>] [args...]       (compatibility)
-      |  textus [--runtime <version>] [--runtime-dev-dir <dir>] command <artifact>[:<version>] <operation> [params...] (compatibility)
+      |  textus [--runtime <version>] <target> server [options...]
+      |  textus [--runtime <version>] <target> client [args...]
+      |  textus [--runtime <version>] <target> command <operation> [params...]
+      |  textus [--runtime <version>] server  <artifact>[:<version>] [options...]   (compatibility)
+      |  textus [--runtime <version>] client  <artifact>[:<version>] [args...]       (compatibility)
+      |  textus [--runtime <version>] command <artifact>[:<version>] <operation> [params...] (compatibility)
       |  textus runtime current
       |  textus runtime list
       |  textus runtime local list
@@ -427,10 +427,6 @@ object TextusCommandParser {
       |  Config launcher.dev-dir delegates the installed launcher to a Textus launcher development checkout.
       |  Run sbt textusExportLauncherClasspath in that checkout before enabling launcher.dev-dir.
       |  --runtime <version> overrides .textus/version and ~/.textus/version.
-      |  --runtime-dev-dir <dir> runs a CNCF runtime from a development checkout.
-      |  Config runtime.dev-dir is the configuration equivalent of --runtime-dev-dir.
-      |  development.runtime.dev-dir is activated by TEXTUS_USE_DEVELOPMENT=true.
-      |  TEXTUS_RUNTIME_DEV_DIR or CNCF_RUNTIME_DEV_DIR overrides the active runtime development checkout.
       |  --launcher-home <dir> selects an explicit Launcher state-home root for isolated integration tests; omit it in normal operation, where textus <artifact> server uses ~/.cncf and ~/.textus.
       |  --config <file> loads an additional Textus launcher config file.
       |  Textus launcher config loads from ~/.textus/config.yaml and ~/.textus/launcher.yaml, then ancestor and cwd .textus config/launcher files.

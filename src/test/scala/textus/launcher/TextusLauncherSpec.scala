@@ -14,7 +14,7 @@ import scala.jdk.CollectionConverters.*
  * @since   May. 17, 2026
  *  version May. 27, 2026
  *  version Jun. 29, 2026
- * @version Jul. 24, 2026
+ * @version Jul. 27, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -537,13 +537,13 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     help.contains("~/.cncf/local is developer local publish state") shouldBe true
     help.contains("Snapshot components are local-only") shouldBe true
     help.contains("yaml/yml, properties/props, and lightweight conf") shouldBe true
-    help.contains("--runtime-dev-dir <dir>") shouldBe true
+    help.contains("--runtime-dev-dir") shouldBe false
     help.contains("Config launcher.dev-dir delegates the installed launcher") shouldBe true
     help.contains("sbt textusExportLauncherClasspath") shouldBe true
-    help.contains("runtime.dev-dir is the configuration equivalent of --runtime-dev-dir") shouldBe true
-    help.contains("development.runtime.dev-dir") shouldBe true
-    help.contains("TEXTUS_USE_DEVELOPMENT=true") shouldBe true
-    help.contains("TEXTUS_RUNTIME_DEV_DIR") shouldBe true
+    help.contains("runtime.dev-dir") shouldBe false
+    help.contains("development.runtime.dev-dir") shouldBe false
+    help.contains("TEXTUS_USE_DEVELOPMENT=true") shouldBe false
+    help.contains("TEXTUS_RUNTIME_DEV_DIR") shouldBe false
     help.contains("--launcher-home <dir> selects an explicit Launcher state-home root") shouldBe true
     help.contains("ancestor and cwd .textus config/launcher files") shouldBe true
     help.contains("~/.textus/launcher.yaml") shouldBe true
