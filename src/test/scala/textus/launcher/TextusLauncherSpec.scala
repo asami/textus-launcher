@@ -14,7 +14,8 @@ import scala.jdk.CollectionConverters.*
  * @since   May. 17, 2026
  *  version May. 27, 2026
  *  version Jun. 29, 2026
- * @version Jul. 27, 2026
+ *  version Jul. 27, 2026
+ * @version Aug. 5, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -1248,11 +1249,16 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
   def textusControlCenterRegistrationHttpLifecycle(): Unit = {
     Given("a reachable Textus Control Center automatic REST endpoint")
     val requests = new ConcurrentLinkedQueue[(String, String)]()
+    val rejectnextheartbeat = new java.util.concurrent.atomic.AtomicBoolean(false)
     val server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0)
     server.createContext("/", new HttpHandler {
       override def handle(exchange: HttpExchange): Unit = {
-        requests.add(exchange.getRequestURI.toString -> exchange.getRequestHeaders.getFirst("Authorization"))
-        exchange.sendResponseHeaders(204, -1)
+        val path = exchange.getRequestURI.toString
+        requests.add(path -> exchange.getRequestHeaders.getFirst("Authorization"))
+        val status =
+          if (path.contains("heartbeat-subsystem") && rejectnextheartbeat.compareAndSet(true, false)) 503
+          else 204
+        exchange.sendResponseHeaders(status, -1)
         exchange.close()
       }
     })
@@ -1312,6 +1318,27 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       Then("registration uses the bound endpoint rather than a guessed default port")
       _assert_equals(requests.size, 2)
       requests.iterator.asScala.forall(_._1.contains("baseUrl=http%3A%2F%2F127.0.0.1%3A38001")) shouldBe true
+
+      Given("a registered server whose heartbeat has one transient communication failure")
+      requests.clear()
+      rejectnextheartbeat.set(true)
+
+      When("the following heartbeat interval reaches Control Center again")
+      val recoveringsession = TextusControlCenterRegistrationReporter.System.start(
+        config.copy(heartbeatInterval = java.time.Duration.ofMillis(20)),
+        report,
+        Some("test-token")
+      )
+      val recoverydeadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2)
+      while (requests.iterator.asScala.count(_._1.contains("heartbeat-subsystem")) < 2 && System.nanoTime() < recoverydeadline)
+        Thread.sleep(10L)
+      recoveringsession.close()
+      val recoveryrequests = requests.iterator.asScala.map(_._1).toVector
+
+      Then("the launcher retains running state and retries heartbeat without registering as starting again")
+      recoveryrequests.count(_.contains("/register-subsystem?")) shouldBe 1
+      recoveryrequests.count(_.contains("/heartbeat-subsystem?")) should be >= 2
+      recoveryrequests.count(_.contains("/deregister-subsystem?")) shouldBe 1
 
       And("the previous canonical textus-admin key remains readable during migration")
       val legacyvalues = LauncherConfigParser.parse(

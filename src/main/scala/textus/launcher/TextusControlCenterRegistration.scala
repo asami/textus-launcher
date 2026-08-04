@@ -8,7 +8,8 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 /*
  * @since   Jul. 18, 2026
- * @version Jul. 24, 2026
+ *  version Jul. 24, 2026
+ * @version Aug. 5, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class TextusControlCenterRegistrationConfig(
@@ -120,8 +121,8 @@ private final class SystemTextusControlCenterRegistrationReporter extends Textus
     val task = new Runnable {
       def run(): Unit =
         if (registered.get) {
-          if (!_post_best_effort(config, report, token, "heartbeat-subsystem", "running"))
-            registered.set(false)
+          _post_best_effort(config, report, token, "heartbeat-subsystem", "running")
+          ()
         } else {
           registered.set(_post_best_effort(config, report, token, "register-subsystem", "starting"))
         }
