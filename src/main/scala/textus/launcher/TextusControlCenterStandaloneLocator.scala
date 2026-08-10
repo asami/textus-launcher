@@ -8,7 +8,7 @@ import java.time.Duration
 
 /*
  * @since   Jul. 19, 2026
- * @version Jul. 19, 2026
+ * @version Aug.  9, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class TextusControlCenterStandaloneRegistration(
@@ -17,6 +17,8 @@ final case class TextusControlCenterStandaloneRegistration(
 )
 
 object TextusControlCenterStandaloneLocator {
+  private val _canonical_inventory_path = "/rest/v1/org-simplemodeling-textus-control-center/subsystem-inventory"
+
   def resolve(paths: LauncherPaths): Option[TextusControlCenterStandaloneRegistration] =
     scala.util.Try(_resolve(paths)).toOption.flatten
 
@@ -93,7 +95,7 @@ object TextusControlCenterStandaloneLocator {
         Set("127.0.0.1", "localhost", "::1").contains(Option(uri.getHost).getOrElse("")) &&
         uri.getPort > 0 &&
         uri.getUserInfo == null &&
-        Option(uri.getPath).contains("/rest/v1/textus-control-center/subsystem-inventory") &&
+        Option(uri.getPath).contains(_canonical_inventory_path) &&
         uri.getQuery == null &&
         uri.getFragment == null
     }

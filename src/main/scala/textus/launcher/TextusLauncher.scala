@@ -3,13 +3,15 @@ package textus.launcher
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
+import java.util.regex.Pattern
 import scala.sys.process.*
 
 /*
  * @since   May. 17, 2026
  *  version May. 27, 2026
  *  version Jun. 29, 2026
- * @version Jul. 24, 2026
+ *  version Jul. 24, 2026
+ * @version Aug. 11, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
@@ -259,7 +261,13 @@ final class TextusLauncher(
       } else {
         throw TextusException(s"development runtime classpath not found: ${file}; prepare it before invoking textus")
       }
-    val entries = classpath.split(File.pathSeparator).toVector.map(_.trim).filter(_.nonEmpty).map(Path.of(_))
+    val entries = classpath
+      .linesIterator
+      .flatMap(_.split(Pattern.quote(File.pathSeparator)))
+      .toVector
+      .map(_.trim)
+      .filter(_.nonEmpty)
+      .map(Path.of(_))
     if (entries.isEmpty)
       throw TextusException(s"CNCF Runtime / fullClasspath was empty for ${project}")
     entries

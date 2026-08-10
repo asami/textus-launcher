@@ -15,7 +15,7 @@ import scala.jdk.CollectionConverters.*
  *  version May. 27, 2026
  *  version Jun. 29, 2026
  *  version Jul. 27, 2026
- * @version Aug. 5, 2026
+ * @version Aug. 11, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -25,6 +25,7 @@ object TextusLauncherSpec {
     spec.helpExplainsLocalRepository()
     spec.runtimeVersion()
     spec.runtimeDevelopmentConfig()
+    spec.runtimeDevelopmentReadsNewlineDelimitedClasspath()
     spec.launcherVersion()
     spec.runtimeHelp()
     spec.configMerge()
@@ -147,6 +148,14 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
         When("development mode or environment override is supplied")
         val outcome = scala.util.Try(runtimeDevelopmentConfig())
         Then("the runtime development directory is activated through launcher config")
+        outcome.get shouldBe ()
+      }
+
+      "runtime development reads newline-delimited classpath entries in order" in {
+        Given("a prepared CNCF runtime classpath with newline-separated entries")
+        When("the Textus launcher invokes the development runtime")
+        val outcome = scala.util.Try(runtimeDevelopmentReadsNewlineDelimitedClasspath())
+        Then("the launcher retains every classpath entry in source order")
         outcome.get shouldBe ()
       }
 
@@ -635,6 +644,28 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     _assert_equals(cncfalias.runtimeDevDir, Some("/tmp/cncf-runtime"))
   }
 
+  def runtimeDevelopmentReadsNewlineDelimitedClasspath(): Unit = _with_temp_paths { paths =>
+    Given("a prepared runtime classpath file containing two newline-separated absolute paths")
+    val devdir = paths.cwd.resolve("cncf-dev")
+    val firstpath = devdir.resolve("target").resolve("classes")
+    val secondpath = devdir.resolve("dependency").resolve("classes")
+    Files.createDirectories(firstpath)
+    Files.createDirectories(secondpath)
+    _write(
+      devdir.resolve("target").resolve("cncf.d").resolve("runtime-classpath.txt"),
+      s"$firstpath\n$secondpath\n"
+    )
+    val invoker = FakeInvoker()
+    val launcher = new TextusLauncher(paths, FakeResolver(), invoker)
+
+    When("the launcher runs against the development runtime")
+    val code = launcher.run(Vector("--runtime-dev-dir", devdir.toString, "version"))
+
+    Then("both entries are retained in source order")
+    code shouldBe 0
+    invoker.lastClasspath shouldBe Vector(firstpath, secondpath)
+  }
+
   def launcherVersion(): Unit = _with_temp_paths { paths =>
     val launcher = new TextusLauncher(paths, FakeResolver(), FakeInvoker())
     val (code, output) = _capture_stdout {
@@ -1079,7 +1110,7 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
          |textus-control-center:
          |  registration:
          |    enabled: true
-         |    endpoint: https://admin.example.test/rest/v1/textus-control-center/subsystem-inventory
+         |    endpoint: https://admin.example.test/rest/v1/org-simplemodeling-textus-control-center/subsystem-inventory
          |    token-env: TEXTUS_ADMIN_REGISTRATION_TOKEN
          |    timeout: 2s
          |    heartbeat-interval: 30s
@@ -1116,7 +1147,7 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     And("a higher-priority explicit disable suppresses inherited registration")
     val inherited = LauncherConfig(
       textusControlCenterRegistration = Some(TextusControlCenterRegistrationConfig(
-        endpoint = "https://admin.example.test/rest/v1/textus-control-center/subsystem-inventory",
+        endpoint = "https://admin.example.test/rest/v1/org-simplemodeling-textus-control-center/subsystem-inventory",
         tokenEnv = "TEXTUS_ADMIN_REGISTRATION_TOKEN",
         timeout = java.time.Duration.ofSeconds(2),
         heartbeatInterval = java.time.Duration.ofSeconds(30),
@@ -1195,12 +1226,13 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     val token = root.resolve("credentials").resolve("launcher-registration.token")
     _write(token, "standalone-token\n")
     Files.setPosixFilePermissions(token, java.util.Set.of(java.nio.file.attribute.PosixFilePermission.OWNER_READ, java.nio.file.attribute.PosixFilePermission.OWNER_WRITE))
-    _write(root.resolve("standalone-locator.yaml"),
+    val locator = root.resolve("standalone-locator.yaml")
+    _write(locator,
       """schemaVersion: 1
         |profile: standalone
         |scopeId: scope-test
         |installationId: standalone-test
-        |endpoint: http://127.0.0.1:18013/rest/v1/textus-control-center/subsystem-inventory
+        |endpoint: http://127.0.0.1:18013/rest/v1/org-simplemodeling-textus-control-center/subsystem-inventory
         |credentialRef: credentials/launcher-registration.token
         |timeout: 2s
         |heartbeatInterval: 30s
@@ -1220,6 +1252,21 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     _assert_equals(reporter.starts.head._2, Some("standalone-token"))
     _assert_equals(reporter.configs.head.baseUrl, "http://127.0.0.1:18014")
     _assert_equals(reporter.closes, 1)
+
+    When("the locator advertises the legacy inventory route")
+    _write(locator, Files.readString(locator).replace(
+      "/rest/v1/org-simplemodeling-textus-control-center/subsystem-inventory",
+      "/rest/v1/textus-control-center/subsystem-inventory"
+    ))
+
+    Then("the legacy locator route is rejected without compatibility fallback")
+    TextusControlCenterStandaloneLocator.resolve(paths) shouldBe None
+
+    Given("the canonical locator route is restored for the following credential scenario")
+    _write(locator, Files.readString(locator).replace(
+      "/rest/v1/textus-control-center/subsystem-inventory",
+      "/rest/v1/org-simplemodeling-textus-control-center/subsystem-inventory"
+    ))
 
     When("the shared credential is no longer owner-readable and owner-writable only")
     Files.setPosixFilePermissions(token, java.util.Set.of(java.nio.file.attribute.PosixFilePermission.OWNER_READ))
@@ -1265,7 +1312,7 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     server.start()
     try {
       val config = TextusControlCenterRegistrationConfig(
-        endpoint = s"http://127.0.0.1:${server.getAddress.getPort}/rest/v1/textus-control-center/subsystem-inventory",
+        endpoint = s"http://127.0.0.1:${server.getAddress.getPort}/rest/v1/org-simplemodeling-textus-control-center/subsystem-inventory",
         tokenEnv = "TEXTUS_ADMIN_REGISTRATION_TOKEN",
         timeout = java.time.Duration.ofSeconds(1),
         heartbeatInterval = java.time.Duration.ofSeconds(30),

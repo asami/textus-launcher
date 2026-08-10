@@ -156,7 +156,7 @@ not use the deprecated CNCF development server.
 textus-control-center:
   registration:
     enabled: true
-    endpoint: https://admin.example.test/rest/v1/textus-control-center/subsystem-inventory
+    endpoint: https://admin.example.test/rest/v1/org-simplemodeling-textus-control-center/subsystem-inventory
     token-env: TEXTUS_CONTROL_CENTER_REGISTRATION_TOKEN
     timeout: 2s
     heartbeat-interval: 30s
