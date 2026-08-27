@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 /*
  * @since   Jul. 18, 2026
  *  version Jul. 24, 2026
- * @version Aug. 5, 2026
+ * @version Aug. 28, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class TextusControlCenterRegistrationConfig(
@@ -117,6 +117,8 @@ private final class SystemTextusControlCenterRegistrationReporter extends Textus
     token: String
   ): TextusControlCenterRegistrationSession = {
     val registered = new AtomicBoolean(_post_best_effort(config, report, token, "register-subsystem", "starting"))
+    if (registered.get)
+      _post_best_effort(config, report, token, "heartbeat-subsystem", "running")
     val executor = Executors.newSingleThreadScheduledExecutor(_daemon_thread_factory)
     val task = new Runnable {
       def run(): Unit =
@@ -124,7 +126,10 @@ private final class SystemTextusControlCenterRegistrationReporter extends Textus
           _post_best_effort(config, report, token, "heartbeat-subsystem", "running")
           ()
         } else {
-          registered.set(_post_best_effort(config, report, token, "register-subsystem", "starting"))
+          val acquired = _post_best_effort(config, report, token, "register-subsystem", "starting")
+          registered.set(acquired)
+          if (acquired)
+            _post_best_effort(config, report, token, "heartbeat-subsystem", "running")
         }
     }
     executor.scheduleAtFixedRate(task, config.heartbeatInterval.toMillis, config.heartbeatInterval.toMillis, TimeUnit.MILLISECONDS)

@@ -11,7 +11,7 @@ import scala.sys.process.*
  *  version May. 27, 2026
  *  version Jun. 29, 2026
  *  version Jul. 24, 2026
- * @version Aug. 11, 2026
+ * @version Aug. 28, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
@@ -440,6 +440,9 @@ final class TextusLauncher(
     config: LauncherConfig,
     report: TextusControlCenterRegistrationReport
   ): TextusControlCenterRegistrationSession = {
+    if (report.artifactId.contains("textus-control-center")) {
+      TextusControlCenterRegistrationSession.noop
+    } else {
       val registration = config.textusControlCenterRegistration.map(value => value -> environment.get(value.tokenEnv)).orElse {
         Option.when(!config.textusControlCenterRegistrationEnabled.contains(false))(
           TextusControlCenterStandaloneLocator.resolve(paths).map { value =>
@@ -463,6 +466,7 @@ final class TextusLauncher(
           }
         case None => TextusControlCenterRegistrationSession.noop
       }
+    }
     }
 
   private def _standalone_registration_base_url(command: TextusCommand.Execute): Option[String] =

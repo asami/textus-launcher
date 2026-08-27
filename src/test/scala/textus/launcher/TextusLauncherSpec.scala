@@ -15,7 +15,7 @@ import scala.jdk.CollectionConverters.*
  *  version May. 27, 2026
  *  version Jun. 29, 2026
  *  version Jul. 27, 2026
- * @version Aug. 11, 2026
+ * @version Aug. 28, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -1144,6 +1144,17 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     _entries(paths).map(_.launcherKind) should contain ("textus")
     _entries(paths).map(_.stoppedAt.isDefined) should contain (true)
 
+    Given("the canonical Textus Control Center artifact in the same resolved repository")
+    _write(carrepo.resolve("textus-control-center").resolve("0.1.0").resolve("textus-control-center-0.1.0.car"), "")
+
+    When("the intrinsic Control Center server command completes")
+    val controlcentercode = launcher.run(Vector("textus-control-center", "server"))
+
+    Then("the launcher records local evidence but does not create a self-registration reporter session")
+    _assert_equals(controlcentercode, 0)
+    _assert_equals(reporter.starts.size, 1)
+    _assert_equals(reporter.closes, 1)
+
     And("a higher-priority explicit disable suppresses inherited registration")
     val inherited = LauncherConfig(
       textusControlCenterRegistration = Some(TextusControlCenterRegistrationConfig(
@@ -1297,13 +1308,15 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     Given("a reachable Textus Control Center automatic REST endpoint")
     val requests = new ConcurrentLinkedQueue[(String, String)]()
     val rejectnextheartbeat = new java.util.concurrent.atomic.AtomicBoolean(false)
+    val rejectnextregistration = new java.util.concurrent.atomic.AtomicBoolean(false)
     val server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0)
     server.createContext("/", new HttpHandler {
       override def handle(exchange: HttpExchange): Unit = {
         val path = exchange.getRequestURI.toString
         requests.add(path -> exchange.getRequestHeaders.getFirst("Authorization"))
         val status =
-          if (path.contains("heartbeat-subsystem") && rejectnextheartbeat.compareAndSet(true, false)) 503
+          if (path.contains("register-subsystem") && rejectnextregistration.compareAndSet(true, false)) 503
+          else if (path.contains("heartbeat-subsystem") && rejectnextheartbeat.compareAndSet(true, false)) 503
           else 204
         exchange.sendResponseHeaders(status, -1)
         exchange.close()
@@ -1336,9 +1349,10 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       session.close()
       session.close()
 
-      Then("it sends one register and one deregister operation with the configured bearer credential")
-      _assert_equals(requests.size, 2)
+      Then("it sends one register, an immediate running heartbeat, and one deregister operation with the configured bearer credential")
+      _assert_equals(requests.size, 3)
       requests.iterator.asScala.map(_._1).exists(_.contains("register-subsystem")) shouldBe true
+      requests.iterator.asScala.map(_._1).exists(_.contains("heartbeat-subsystem")) shouldBe true
       requests.iterator.asScala.map(_._1).exists(_.contains("deregister-subsystem")) shouldBe true
       requests.iterator.asScala.forall(_._2 == "Bearer test-token") shouldBe true
       requests.iterator.asScala.forall { case (path, _) => path.contains("instanceId=textus-registration-http-spec") } shouldBe true
@@ -1358,13 +1372,39 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
         Thread.sleep(10L)
       dynamicsession.close()
       val closedeadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2)
-      while (requests.size < 2 && System.nanoTime() < closedeadline)
+      while (requests.size < 3 && System.nanoTime() < closedeadline)
         Thread.sleep(10L)
       sys.props.remove(propertykey)
 
       Then("registration uses the bound endpoint rather than a guessed default port")
-      _assert_equals(requests.size, 2)
+      _assert_equals(requests.size, 3)
       requests.iterator.asScala.forall(_._1.contains("baseUrl=http%3A%2F%2F127.0.0.1%3A38001")) shouldBe true
+
+      Given("an initial registration attempt that is temporarily unavailable")
+      requests.clear()
+      rejectnextregistration.set(true)
+
+      When("the scheduled registration retry reaches Control Center")
+      val retrysession = TextusControlCenterRegistrationReporter.System.start(
+        config.copy(heartbeatInterval = java.time.Duration.ofMillis(20)),
+        report,
+        Some("test-token")
+      )
+      val retrydeadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2)
+      while ((requests.iterator.asScala.count(_._1.contains("register-subsystem")) < 2 || requests.iterator.asScala.count(_._1.contains("heartbeat-subsystem")) < 1) && System.nanoTime() < retrydeadline)
+        Thread.sleep(10L)
+      retrysession.close()
+      val retryrequests = requests.iterator.asScala.map(_._1).toVector
+
+      Then("a successful retry immediately publishes running before later heartbeat intervals")
+      retryrequests.take(3).map { path =>
+        if (path.contains("register-subsystem")) "register"
+        else if (path.contains("heartbeat-subsystem")) "heartbeat"
+        else "other"
+      } shouldBe Vector("register", "register", "heartbeat")
+      retryrequests.count(_.contains("/register-subsystem?")) shouldBe 2
+      retryrequests.count(_.contains("/heartbeat-subsystem?")) should be >= 1
+      retryrequests.count(_.contains("/deregister-subsystem?")) shouldBe 1
 
       Given("a registered server whose heartbeat has one transient communication failure")
       requests.clear()
