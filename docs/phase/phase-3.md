@@ -2,13 +2,16 @@
 
 Status: PLANNED
 Planned: 2026-10-16
-Upstream: textus-control-center Phase 8, goldenport-cncf Phase 113
+Upstream: textus-control-center Phase 8, textus-supervisor Phase 1
 
 ## Goal
 
 Validate and minimally extend the canonical Textus launcher path for CAR execution inside the Docker Compose operational profile.
 
 ## Scope
+
+Use the existing CNCF/CAR runtime contract first. A new CNCF phase is created only if Docker acceptance exposes a concrete missing runtime capability.
+
 
 - Preserve the existing registration, heartbeat and deregistration protocol.
 - Support a Control Center registration endpoint addressed by Compose service DNS.
