@@ -5,13 +5,15 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
 import java.util.regex.Pattern
 import scala.sys.process.*
+import scala.util.control.NonFatal
 
 /*
  * @since   May. 17, 2026
  *  version May. 27, 2026
  *  version Jun. 29, 2026
  *  version Jul. 24, 2026
- * @version Aug. 11, 2026
+ *  version Aug. 11, 2026
+ * @version Oct. 16, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
@@ -387,10 +389,7 @@ final class TextusLauncher(
     val evidencesession = report.map(_local_evidence_session).getOrElse(LocalServerEvidenceSession.noop)
     val registrationsession = report.map(_registration_session(command, effectiveconfig, _)).getOrElse(TextusControlCenterRegistrationSession.noop)
     val shutdownhook = new Thread(
-      () => {
-        registrationsession.close()
-        evidencesession.close()
-      },
+      () => _close_server_sessions(evidencesession, registrationsession),
       "textus-server-lifecycle-shutdown"
     )
     Runtime.getRuntime.addShutdownHook(shutdownhook)
@@ -398,8 +397,7 @@ final class TextusLauncher(
       cncfinvoker.invoke(classpath, cncfargs)
     } finally {
       scala.util.Try(Runtime.getRuntime.removeShutdownHook(shutdownhook))
-      registrationsession.close()
-      evidencesession.close()
+      _close_server_sessions(evidencesession, registrationsession)
     }
   }
 
@@ -423,6 +421,20 @@ final class TextusLauncher(
         startedAt = java.time.Instant.now()
       ))
     }
+
+  private def _close_server_sessions(
+    evidence: LocalServerEvidenceSession,
+    registration: TextusControlCenterRegistrationSession
+  ): Unit = {
+    try evidence.close()
+    catch {
+      case NonFatal(_) => Console.err.println("warning: local CNCF server evidence close failed.")
+    }
+    try registration.close()
+    catch {
+      case NonFatal(_) => Console.err.println("warning: Textus Control Center registration close failed.")
+    }
+  }
 
   private def _local_evidence_session(
     report: TextusControlCenterRegistrationReport

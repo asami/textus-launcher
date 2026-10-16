@@ -1,7 +1,7 @@
 import org.goldenport.cozy.CozyPlugin.autoImport._
 
 ThisBuild / organization := "org.goldenport"
-ThisBuild / version := "0.2.3"
+ThisBuild / version := "0.2.4-SNAPSHOT"
 ThisBuild / scalaVersion := "3.3.8"
 ThisBuild / Compile / scalacOptions += "-release:17"
 ThisBuild / Compile / javacOptions ++= Seq("--release", "17")
@@ -14,7 +14,8 @@ libraryDependencies ++= Seq(
   "io.circe" %% "circe-core" % "0.14.6",
   "io.circe" %% "circe-generic" % "0.14.6",
   "io.circe" %% "circe-parser" % "0.14.6",
-  "org.scalatest" %% "scalatest" % "3.2.19" % Test
+  "org.scalatest" %% "scalatest" % "3.2.19" % Test,
+  "org.scalacheck" %% "scalacheck" % "1.17.1" % Test
 )
 
 cozyCoursierChannelPath := "repository/textus/coursier-channel.json"
@@ -28,14 +29,14 @@ cozyCoursierChannelEntries := Seq(CozyCoursierChannelEntry(
   mainClass = "textus.launcher.TextusMain"
 ))
 
-def launcherBuildInfoSource(target: File, packagename: String, launchername: String, launcherversion: String): File = {
+def launcherBuildInfoSource(target: File, packageName: String, launcherName: String, launcherVersion: String): File = {
   val file = target / "LauncherBuildInfo.scala"
   IO.write(file,
-    s"""package $packagename
+    s"""package $packageName
        |
        |object LauncherBuildInfo {
-       |  val name: String = "$launchername"
-       |  val version: String = "$launcherversion"
+       |  val name: String = "$launcherName"
+       |  val version: String = "$launcherVersion"
        |}
        |""".stripMargin)
   file
@@ -61,9 +62,11 @@ lazy val root = (project in file("."))
       IO.write(file, classpath + "\n")
       file
     },
-    Test / test := {
-      (Test / runMain).toTask(" textus.launcher.TextusLauncherSpec").value
-    },
+    Test / parallelExecution := false,
+    Test / test := Def.sequential(
+      (Test / testOnly).toTask(" textus.launcher.CanonicalServerNotificationSpec"),
+      (Test / runMain).toTask(" textus.launcher.TextusLauncherSpec")
+    ).value,
     publishTo := {
       val repo = sys.env.get("SIMPLEMODELING_MAVEN_LOCAL")
         .map(file)

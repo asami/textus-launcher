@@ -15,7 +15,8 @@ import scala.jdk.CollectionConverters.*
  *  version May. 27, 2026
  *  version Jun. 29, 2026
  *  version Jul. 27, 2026
- * @version Aug. 11, 2026
+ *  version Aug. 11, 2026
+ * @version Oct. 16, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -1297,6 +1298,14 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     Given("a reachable Textus Control Center automatic REST endpoint")
     val requests = new ConcurrentLinkedQueue[(String, String)]()
     val rejectnextheartbeat = new java.util.concurrent.atomic.AtomicBoolean(false)
+    val baseurlpropertykey = "textus.server.bound-base-url"
+    val applicationpathpropertykey = "textus.server.bound-application-path"
+    val snapshotpropertykey = "textus.server.bound-snapshot"
+    val previousbaseurl = sys.props.get(baseurlpropertykey)
+    val previousapplicationpath = sys.props.get(applicationpathpropertykey)
+    val previoussnapshot = sys.props.get(snapshotpropertykey)
+    def _publish_snapshot_(baseurl: String, applicationpath: String = ""): Unit =
+      sys.props.update(snapshotpropertykey, s"v1\n$baseurl\n$applicationpath")
     val server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0)
     server.createContext("/", new HttpHandler {
       override def handle(exchange: HttpExchange): Unit = {
@@ -1311,6 +1320,9 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     })
     server.start()
     try {
+      sys.props.update(applicationpathpropertykey, "/web")
+      sys.props.update(baseurlpropertykey, "http://127.0.0.1:38000")
+      _publish_snapshot_("http://127.0.0.1:38000", "/web")
       val config = TextusControlCenterRegistrationConfig(
         endpoint = s"http://127.0.0.1:${server.getAddress.getPort}/rest/v1/org-simplemodeling-textus-control-center/subsystem-inventory",
         tokenEnv = "TEXTUS_ADMIN_REGISTRATION_TOKEN",
@@ -1333,7 +1345,9 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
 
       When("the reporter starts and closes one server registration session")
       val session = TextusControlCenterRegistrationReporter.System.start(config, report, Some("test-token"))
+      _await_registration(requests.size >= 1)
       session.close()
+      _await_registration(requests.size >= 2)
       session.close()
 
       Then("it sends one register and one deregister operation with the configured bearer credential")
@@ -1344,15 +1358,74 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       requests.iterator.asScala.forall { case (path, _) => path.contains("instanceId=textus-registration-http-spec") } shouldBe true
       requests.iterator.asScala.forall { case (path, _) => path.contains("artifactId=textus-registration") } shouldBe true
       requests.iterator.asScala.forall { case (path, _) => path.contains("?protocolVersion=1&instanceId=") } shouldBe true
+      requests.iterator.asScala.forall { case (path, _) => path.contains("applicationUrl=https%3A%2F%2Fsubsystem.example.test%2Fweb") } shouldBe true
+
+      Given("an explicit public base and an explicit default application path")
+      requests.clear()
+      sys.props.update(applicationpathpropertykey, "/web/portal")
+      _publish_snapshot_("http://127.0.0.1:38000", "/web/portal")
+
+      When("the ready framework snapshot activates the registration")
+      val explicitpathsession = TextusControlCenterRegistrationReporter.System.start(config, report, Some("test-token"))
+      _await_registration(requests.size >= 1)
+      explicitpathsession.close()
+      _await_registration(requests.size >= 2)
+
+      Then("the registration preserves its public authority while composing the explicit application path")
+      _assert_equals(requests.size, 2)
+      requests.iterator.asScala.forall(_._1.contains("baseUrl=https%3A%2F%2Fsubsystem.example.test")) shouldBe true
+      requests.iterator.asScala.forall(_._1.contains("applicationUrl=https%3A%2F%2Fsubsystem.example.test%2Fweb%2Fportal")) shouldBe true
+
+      Given("a ready server with no selected application path")
+      requests.clear()
+      sys.props.remove(applicationpathpropertykey)
+      _publish_snapshot_("http://127.0.0.1:38000")
+
+      When("the public-base registration activates and closes")
+      val noappsession = TextusControlCenterRegistrationReporter.System.start(config, report, Some("test-token"))
+      _await_registration(requests.size >= 1)
+      noappsession.close()
+      _await_registration(requests.size >= 2)
+
+      Then("the public registration base is retained while applicationUrl is omitted")
+      _assert_equals(requests.size, 2)
+      requests.iterator.asScala.forall(_._1.contains("baseUrl=https%3A%2F%2Fsubsystem.example.test")) shouldBe true
+      requests.iterator.asScala.forall { case (path, _) => !path.contains("applicationUrl=") } shouldBe true
+
+      Given("an invalid configured public base path")
+      requests.clear()
+
+      When("the pending reporter sees ready framework state")
+      val invalidbasesession = TextusControlCenterRegistrationReporter.System.start(config.copy(baseUrl = "https://subsystem.example.test/prefix"), report, Some("test-token"))
+      invalidbasesession.close()
+
+      Then("registration remains best-effort isolated and does not publish a prefixed application URL")
+      _assert_equals(requests.size, 0)
+
+      Given("an incomplete atomic snapshot while legacy values appear complete")
+      requests.clear()
+      sys.props.update(baseurlpropertykey, "http://127.0.0.1:38001")
+      sys.props.update(applicationpathpropertykey, "/web/legacy")
+      sys.props.update(snapshotpropertykey, "v1\nhttp://127.0.0.1:38001")
+
+      When("the reporter cannot parse the incomplete readiness generation")
+      val incompletesession = TextusControlCenterRegistrationReporter.System.start(config.copy(baseUrl = ""), report, Some("test-token"))
+      incompletesession.close()
+
+      Then("registration fails closed instead of combining legacy readiness properties")
+      _assert_equals(requests.size, 0)
 
       Given("registration without an explicit public base URL")
       requests.clear()
-      val propertykey = "textus.server.bound-base-url"
-      sys.props.remove(propertykey)
+      sys.props.remove(baseurlpropertykey)
+      sys.props.remove(applicationpathpropertykey)
+      sys.props.remove(snapshotpropertykey)
 
       When("CNCF publishes the endpoint after the server has bound")
       val dynamicsession = TextusControlCenterRegistrationReporter.System.start(config.copy(baseUrl = ""), report, Some("test-token"))
-      sys.props.update(propertykey, "http://127.0.0.1:38001")
+      sys.props.update(applicationpathpropertykey, "/web")
+      sys.props.update(baseurlpropertykey, "http://127.0.0.1:38000")
+      _publish_snapshot_("http://127.0.0.1:38000", "/web")
       val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2)
       while (requests.size < 1 && System.nanoTime() < deadline)
         Thread.sleep(10L)
@@ -1360,15 +1433,39 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       val closedeadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2)
       while (requests.size < 2 && System.nanoTime() < closedeadline)
         Thread.sleep(10L)
-      sys.props.remove(propertykey)
 
-      Then("registration uses the bound endpoint rather than a guessed default port")
+      Then("registration uses the bound endpoint and exact encoded application endpoint rather than guessing either")
       _assert_equals(requests.size, 2)
-      requests.iterator.asScala.forall(_._1.contains("baseUrl=http%3A%2F%2F127.0.0.1%3A38001")) shouldBe true
+      requests.iterator.asScala.forall(_._1.contains("baseUrl=http%3A%2F%2F127.0.0.1%3A38000")) shouldBe true
+      requests.iterator.asScala.forall(_._1.contains("applicationUrl=http%3A%2F%2F127.0.0.1%3A38000%2Fweb")) shouldBe true
+      sys.props.remove(applicationpathpropertykey)
+      sys.props.remove(baseurlpropertykey)
+      sys.props.remove(snapshotpropertykey)
+
+      Given("an atomic generation A readiness snapshot while legacy properties contain generation B")
+      requests.clear()
+      sys.props.update(applicationpathpropertykey, "/web/legacy")
+      sys.props.update(baseurlpropertykey, "http://127.0.0.1:38011")
+      _publish_snapshot_("http://127.0.0.1:38010", "/web/atomic")
+
+      When("the launcher activates from the coherent snapshot")
+      val interleavingsession = TextusControlCenterRegistrationReporter.System.start(config.copy(baseUrl = ""), report, Some("test-token"))
+      _await_registration(requests.size >= 1)
+      interleavingsession.close()
+      _await_registration(requests.size >= 2)
+
+      Then("register and deregister retain only atomic generation A")
+      _assert_equals(requests.size, 2)
+      requests.iterator.asScala.forall(_._1.contains("baseUrl=http%3A%2F%2F127.0.0.1%3A38010")) shouldBe true
+      requests.iterator.asScala.forall(_._1.contains("applicationUrl=http%3A%2F%2F127.0.0.1%3A38010%2Fweb%2Fatomic")) shouldBe true
+      requests.iterator.asScala.forall(path => !path._1.contains("38011") && !path._1.contains("legacy")) shouldBe true
 
       Given("a registered server whose heartbeat has one transient communication failure")
       requests.clear()
       rejectnextheartbeat.set(true)
+      sys.props.update(applicationpathpropertykey, "/web")
+      sys.props.update(baseurlpropertykey, "http://127.0.0.1:38000")
+      _publish_snapshot_("http://127.0.0.1:38000", "/web")
 
       When("the following heartbeat interval reaches Control Center again")
       val recoveringsession = TextusControlCenterRegistrationReporter.System.start(
@@ -1376,16 +1473,26 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
         report,
         Some("test-token")
       )
+      _await_registration(requests.size >= 1)
+      sys.props.update(applicationpathpropertykey, "/web/changed-after-activation")
+      sys.props.update(baseurlpropertykey, "http://127.0.0.1:39000")
+      _publish_snapshot_("http://127.0.0.1:39000", "/web/changed-after-activation")
       val recoverydeadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2)
       while (requests.iterator.asScala.count(_._1.contains("heartbeat-subsystem")) < 2 && System.nanoTime() < recoverydeadline)
         Thread.sleep(10L)
       recoveringsession.close()
+      _await_registration(requests.iterator.asScala.exists(_._1.contains("/deregister-subsystem?")))
       val recoveryrequests = requests.iterator.asScala.map(_._1).toVector
 
       Then("the launcher retains running state and retries heartbeat without registering as starting again")
       recoveryrequests.count(_.contains("/register-subsystem?")) shouldBe 1
       recoveryrequests.count(_.contains("/heartbeat-subsystem?")) should be >= 2
       recoveryrequests.count(_.contains("/deregister-subsystem?")) shouldBe 1
+      recoveryrequests.forall(_.contains("applicationUrl=https%3A%2F%2Fsubsystem.example.test%2Fweb")) shouldBe true
+      recoveryrequests.exists(_.contains("changed-after-activation")) shouldBe false
+      sys.props.remove(applicationpathpropertykey)
+      sys.props.remove(baseurlpropertykey)
+      sys.props.remove(snapshotpropertykey)
 
       And("the previous canonical textus-admin key remains readable during migration")
       val legacyvalues = LauncherConfigParser.parse(
@@ -1400,7 +1507,18 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       )
       TextusControlCenterRegistrationConfig.fromParsed(legacyvalues).map(_.hostLabel) shouldBe Some("legacy")
     } finally {
-      sys.props.remove("textus.server.bound-base-url")
+      previousbaseurl match {
+        case Some(value) => sys.props.update(baseurlpropertykey, value)
+        case None => sys.props.remove(baseurlpropertykey)
+      }
+      previousapplicationpath match {
+        case Some(value) => sys.props.update(applicationpathpropertykey, value)
+        case None => sys.props.remove(applicationpathpropertykey)
+      }
+      previoussnapshot match {
+        case Some(value) => sys.props.update(snapshotpropertykey, value)
+        case None => sys.props.remove(snapshotpropertykey)
+      }
       server.stop(0)
     }
   }
@@ -1880,8 +1998,15 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     (code, out.toString, err.toString)
   }
 
+  private def _await_registration(condition: => Boolean): Unit = {
+    val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(3)
+    while (!condition && System.nanoTime() < deadline) Thread.sleep(5L)
+    condition shouldBe true
+  }
+
   private def _with_temp_paths(f: LauncherPaths => Unit): Unit = {
-    val root = Files.createTempDirectory("textus-launcher-spec-")
+    val fixtureparent = Files.createDirectories(Path.of("target", "launcher-spec-fixtures"))
+    val root = Files.createTempDirectory(fixtureparent, "textus-launcher-spec-").toAbsolutePath.normalize
     val home = root.resolve("home")
     val cwd = root.resolve("work")
     Files.createDirectories(home)
