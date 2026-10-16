@@ -64,7 +64,7 @@ lazy val root = (project in file("."))
     },
     Test / parallelExecution := false,
     Test / test := Def.sequential(
-      (Test / testOnly).toTask(" textus.launcher.CanonicalServerNotificationSpec"),
+      (Test / testOnly).toTask(" textus.launcher.CanonicalServerNotificationSpec textus.launcher.ServerEvidenceProcessIdentitySpec"),
       (Test / runMain).toTask(" textus.launcher.TextusLauncherSpec")
     ).value,
     publishTo := {

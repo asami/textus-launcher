@@ -10,6 +10,25 @@ invocation facts; `textus-supervisor` owns lifecycle execution and durable
 ownership. Control Center invokes that provider through its standard Supervisor
 socket and protected Operations. No foreground Launcher daemon is required.
 
+For a Supervisor-created invocation, Textus Launcher reads
+`--textus.control-center.registration-instance-id=` from ordinary arguments or
+passthrough arguments. Its nonempty trimmed value is an opaque identity,
+including 32hex Supervisor IDs, legacy UUIDs and other opaque strings. The
+single report shared by durable evidence and registration reuses this value.
+Missing, empty or whitespace-only metadata generates a fresh UUID. Only the
+exact internal option prefix is removed before invoking the runtime; all other
+argument order and spelling is preserved.
+
+[SupervisorInstanceCorrelationSpec](../../src/test/scala/textus/launcher/SupervisorInstanceCorrelationSpec.scala)
+requires at least 50 successful generated cases of each identity form in both
+ordinary and passthrough arguments, with zero discarded cases. Recording
+runtime and registration doubles establish correlation, closed sessions,
+durable stopped evidence and fresh UUID fallback without network access. This
+does not prove canonical child or recovery acceptance. Canonical Supervisor
+fixtures retain only their originally acquired child handles for cleanup
+after failure; that test ownership does not replace production reconstruction
+from exact durable evidence and live native identity.
+
 ## Existing Notification Surface
 
 Notification uses the existing protocol-version-1 Control Center GET Operations
@@ -72,3 +91,32 @@ only `http` loopback endpoints (`127.0.0.1`, `::1`, or `localhost`), returned th
 supervisor's safe JSON result unchanged, and made no process-management call.
 Malformed request identity, credentials, timeout, or endpoint were reported as
 safe local errors before any network request.
+
+## Optional native invocation identity
+
+The shared `cncf.launcher.server-evidence.v1` entry appends optional
+`processId` and `processStartedAt`, defaulting to absent for existing positional
+source constructors. At start the real Launcher JVM captures its positive PID
+and native `ProcessHandle.info.startInstant` once. It writes both together, or
+neither when native metadata is unavailable. Report timestamps, current time
+and guessed process identity never replace the native start instant.
+
+Heartbeat, normal termination and updates to another invocation preserve this
+tuple, including CNCF Launcher rows. Legacy missing or null fields remain
+readable and retained without backfill or malformed-evidence quarantine. This
+is source compatibility, not a binary ABI or schema-migration promise.
+
+The tuple is a private observation. CNCF Launcher's safe shared list continues
+to omit the development directory and both native fields; separately protected
+detail may include them. Notifications and Supervisor public results contain
+no PID, native start time or private path. Lifecycle authority remains entirely
+with Supervisor, whose existing exact identity and live-native checks fail
+closed for missing, stale, ambiguous or mismatched evidence. Textus Launcher
+does not enumerate or signal processes, acquire child ownership, or host a
+daemon.
+
+[ServerEvidenceProcessIdentitySpec](../../src/test/scala/textus/launcher/ServerEvidenceProcessIdentitySpec.scala)
+specifies at least 50 successful generated actual-store cases with zero
+discards (EP1), legacy wire and positional-source compatibility (EP2), and
+preservation of other-kind native tuples (EP3). Declared wire inputs do not
+prove a second writer process, canonical child, or lifecycle ownership.

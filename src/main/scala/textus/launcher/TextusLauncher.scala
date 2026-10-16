@@ -13,7 +13,7 @@ import scala.util.control.NonFatal
  *  version Jun. 29, 2026
  *  version Jul. 24, 2026
  *  version Aug. 11, 2026
- * @version Oct. 16, 2026
+ * @version Oct. 17, 2026
  * @author  ASAMI, Tomoharu
  */
 final class TextusLauncher(
@@ -410,7 +410,8 @@ final class TextusLauncher(
       None
     } else {
       Some(TextusControlCenterRegistrationReport(
-        instanceId = java.util.UUID.randomUUID().toString,
+        instanceId = _registration_instance_id(command.args ++ command.passthrough)
+          .getOrElse(java.util.UUID.randomUUID().toString),
         target = artifact.selector.name,
         artifactId = Some(artifact.selector.name),
         executionMode = "artifact",
@@ -477,6 +478,15 @@ final class TextusLauncher(
       }
     }
 
+  private def _registration_instance_id(args: Vector[String]): Option[String] =
+    args.collectFirst {
+      case value if value.startsWith("--textus.control-center.registration-instance-id=") =>
+        value.stripPrefix("--textus.control-center.registration-instance-id=").trim
+    }.filter(_.nonEmpty)
+
+  private def _runtime_command_args(args: Vector[String]): Vector[String] =
+    args.filterNot(_.startsWith("--textus.control-center.registration-instance-id="))
+
   private def _standalone_registration_base_url(command: TextusCommand.Execute): Option[String] =
     (command.args ++ command.passthrough).collectFirst {
       case value if value.startsWith("--textus.server.port=") => value.stripPrefix("--textus.server.port=")
@@ -504,7 +514,7 @@ final class TextusLauncher(
         case ArtifactKind.Auto =>
           throw TextusException("unresolved artifact kind")
       }
-    repositoryargs ++ artifactargs ++ Vector(command.mode) ++ command.args ++ command.passthrough
+    repositoryargs ++ artifactargs ++ Vector(command.mode) ++ _runtime_command_args(command.args ++ command.passthrough)
   }
 }
 
