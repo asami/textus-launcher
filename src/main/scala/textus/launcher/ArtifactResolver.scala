@@ -7,13 +7,15 @@ import scala.util.Using
 /*
  * @since   May. 17, 2026
  *  version May. 25, 2026
- * @version Jul. 16, 2026
+ *  version Jul. 16, 2026
+ * @version Oct. 17, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class ResolvedArtifact(
   selector: ArtifactSelector,
   kind: ArtifactKind,
-  runtimeRequirements: Vector[RuntimeRequirement] = Vector.empty
+  runtimeRequirements: Vector[RuntimeRequirement] = Vector.empty,
+  localArchive: Option[Path] = None
 )
 
 private final case class ArtifactResolution(
@@ -99,8 +101,13 @@ final class ArtifactResolver {
       None
     } else {
       val versions = selector.version.map(Vector(_)).getOrElse(_local_versions(root))
-      versions.find(v => Files.isRegularFile(root.resolve(v).resolve(s"${selector.name}-$v$suffix"))).
-        map(v => ResolvedArtifact(selector.copy(version = Some(v)), _kind_from_suffix(suffix)))
+      versions.iterator.map { version =>
+        version -> root.resolve(version).resolve(s"${selector.name}-$version$suffix")
+      }.find { case (_, path) => Files.isRegularFile(path) }.
+        map { case (version, path) =>
+          ResolvedArtifact(selector.copy(version = Some(version)), _kind_from_suffix(suffix),
+            localArchive = Some(path.toAbsolutePath.normalize))
+        }
     }
   }
 
@@ -138,9 +145,10 @@ final class ArtifactResolver {
     catalog.resolve(selector.version) match {
       case Some(version) =>
         _local_catalog_file_exists(repository, selector.name, suffix, version) match {
-          case Some(_) =>
+          case Some(archive) =>
             val requirements = version.runtime.toVector.map(_.withSource(selector.name)) ++ _local_dependency_requirements(repository, catalog)
-            ArtifactResolution(Some(ResolvedArtifact(selector.copy(version = Some(version.version)), _kind_from_suffix(suffix), requirements)))
+            ArtifactResolution(Some(ResolvedArtifact(selector.copy(version = Some(version.version)), _kind_from_suffix(suffix), requirements,
+              localArchive = Some(archive.toAbsolutePath.normalize))))
           case None =>
             ArtifactResolution(None, Vector(s"local catalog points to a missing archive: ${selector.name}:${version.version}: $path"))
         }
@@ -280,10 +288,10 @@ final class ArtifactResolver {
     name: String,
     suffix: String,
     version: RepositoryArtifactCatalogVersion
-  ): Option[Unit] = {
+  ): Option[Path] = {
     val default = repository.resolve(name).resolve(version.version).resolve(s"$name-${version.version}$suffix")
     val path = version.file.map(f => repository.getParent.resolve(f.stripPrefix("repository/"))).getOrElse(default)
-    Option.when(Files.isRegularFile(path))(())
+    Option.when(Files.isRegularFile(path))(path)
   }
 
   private def _remote_catalog_text(

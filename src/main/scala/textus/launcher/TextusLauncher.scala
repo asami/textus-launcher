@@ -506,8 +506,12 @@ final class TextusLauncher(
     val artifactargs =
       artifact.kind match {
         case ArtifactKind.Car =>
-          Vector(s"--textus.component=${artifact.selector.name}") ++
-            artifact.selector.version.map(v => s"--textus.component.version=$v").toVector
+          artifact.localArchive match {
+            case Some(path) => Vector(s"--textus.component.file=$path")
+            case None =>
+              Vector(s"--textus.component=${artifact.selector.name}") ++
+                artifact.selector.version.map(v => s"--textus.component.version=$v").toVector
+          }
         case ArtifactKind.Sar =>
           val name = artifact.selector.version.map(v => s"${artifact.selector.name}-$v").getOrElse(artifact.selector.name)
           Vector(s"--textus.subsystem=$name")

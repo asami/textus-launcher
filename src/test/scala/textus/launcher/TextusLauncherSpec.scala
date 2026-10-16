@@ -16,7 +16,7 @@ import scala.jdk.CollectionConverters.*
  *  version Jun. 29, 2026
  *  version Jul. 27, 2026
  *  version Aug. 11, 2026
- * @version Oct. 16, 2026
+ * @version Oct. 17, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusLauncherSpec {
@@ -987,6 +987,7 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
   }
 
   def executionRewritesToCncfArgs(): Unit = _with_temp_paths { paths =>
+    Given("a local CAR metadata repository containing explicit and latest versions")
     val carrepo = paths.cwd.resolve("repo").resolve("car")
     _write(carrepo.resolve("textus-blog").resolve("0.1.0").resolve("textus-blog-0.1.0.car"), "")
     _write(carrepo.resolve("textus-blog").resolve("0.1.1").resolve("textus-blog-0.1.1.car"), "")
@@ -1016,8 +1017,10 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
          |""".stripMargin)
     val invoker = FakeInvoker()
     val launcher = new TextusLauncher(paths, FakeResolver(), invoker)
+    When("the launcher executes the explicitly selected local CAR")
     launcher.run(Vector("command", "--car", "textus-blog:0.1.0", "blog.post.search", "limit=10"))
-    _assert_equals(invoker.lastArgs, Vector(
+    Then("the exact archive replaces component selector options while repository and command arguments retain order")
+    invoker.lastArgs shouldBe Vector(
       s"--repository-dir=$carrepo",
       s"--repository-dir=${paths.localCarRepository}",
       s"--repository-dir=${paths.cacheCarRepository}",
@@ -1025,14 +1028,15 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       s"--repository-dir=${paths.localSarRepository}",
       s"--repository-dir=${paths.cacheSarRepository}",
       "--repository-dir=https://www.simplemodeling.org/repository/sar",
-      "--textus.component=textus-blog",
-      "--textus.component.version=0.1.0",
+      s"--textus.component.file=${carrepo.resolve("textus-blog/0.1.0/textus-blog-0.1.0.car").toAbsolutePath.normalize}",
       "command",
       "blog.post.search",
       "limit=10"
-    ))
+    )
+    When("the launcher selects the metadata latest local CAR")
     launcher.run(Vector("command", "--car", "textus-blog", "blog.post.search", "limit=10"))
-    _assert_equals(invoker.lastArgs, Vector(
+    Then("the latest selected archive replaces component selector options with the same command arguments")
+    invoker.lastArgs shouldBe Vector(
       s"--repository-dir=$carrepo",
       s"--repository-dir=${paths.localCarRepository}",
       s"--repository-dir=${paths.cacheCarRepository}",
@@ -1040,12 +1044,11 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
       s"--repository-dir=${paths.localSarRepository}",
       s"--repository-dir=${paths.cacheSarRepository}",
       "--repository-dir=https://www.simplemodeling.org/repository/sar",
-      "--textus.component=textus-blog",
-      "--textus.component.version=0.1.1",
+      s"--textus.component.file=${carrepo.resolve("textus-blog/0.1.1/textus-blog-0.1.1.car").toAbsolutePath.normalize}",
       "command",
       "blog.post.search",
       "limit=10"
-    ))
+    )
   }
 
   def serverExecutionDelegatesDefaultPortResolutionToRuntime(): Unit = _with_temp_paths { paths =>
@@ -1073,8 +1076,9 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
 
     Then("CAR activation is forwarded without a launcher-owned port override")
     _assert_equals(carcode, 0)
-    invoker.lastArgs.contains("--textus.component=textus-blog") shouldBe true
-    invoker.lastArgs.contains("--textus.component.version=0.1.0") shouldBe true
+    invoker.lastArgs.contains(s"--textus.component.file=${carrepo.resolve("textus-blog/0.1.0/textus-blog-0.1.0.car").toAbsolutePath.normalize}") shouldBe true
+    invoker.lastArgs.exists(_.startsWith("--textus.component=")) shouldBe false
+    invoker.lastArgs.exists(_.startsWith("--textus.component.version=")) shouldBe false
     invoker.lastArgs.last shouldBe "server"
     invoker.lastArgs.exists(_.startsWith("--textus.server.port=")) shouldBe false
     invoker.lastArgs.exists(_.startsWith("--cncf.server.port=")) shouldBe false
@@ -1572,6 +1576,7 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
   }
 
   def localRepositoryResolvesArtifactWithoutConfig(): Unit = _with_temp_paths { paths =>
+    Given("the default local CAR repository contains a metadata-selected archive")
     _write(paths.localCarRepository.resolve("textus-local").resolve("maven-metadata.xml"),
       """<metadata>
         |  <groupId>org.simplemodeling.repository.car</groupId>
@@ -1585,12 +1590,15 @@ final class TextusLauncherSpec extends AnyWordSpec with Matchers with GivenWhenT
     _write(paths.localCarRepository.resolve("textus-local").resolve("0.1.0").resolve("textus-local-0.1.0.car"), "car")
     val invoker = FakeInvoker()
     val launcher = new TextusLauncher(paths, FakeResolver(), invoker)
+    When("the canonical server command resolves the artifact without repository configuration")
     val code = launcher.run(Vector("server", "textus-local"))
 
+    Then("the launcher retains the repository and passes the exact local archive to the runtime")
     _assert_equals(code, 0)
     invoker.lastArgs.contains(s"--repository-dir=${paths.localCarRepository}") shouldBe true
-    invoker.lastArgs.contains("--textus.component=textus-local") shouldBe true
-    invoker.lastArgs.contains("--textus.component.version=0.1.0") shouldBe true
+    invoker.lastArgs.contains(s"--textus.component.file=${paths.localCarRepository.resolve("textus-local/0.1.0/textus-local-0.1.0.car").toAbsolutePath.normalize}") shouldBe true
+    invoker.lastArgs.exists(_.startsWith("--textus.component=")) shouldBe false
+    invoker.lastArgs.exists(_.startsWith("--textus.component.version=")) shouldBe false
   }
 
   def snapshotArtifactDoesNotFallThroughToCacheOrPublic(): Unit = _with_temp_paths { paths =>
