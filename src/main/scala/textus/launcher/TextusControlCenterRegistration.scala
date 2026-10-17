@@ -15,7 +15,8 @@ import scala.util.control.NonFatal
  * @since   Jul. 18, 2026
  *  version Jul. 24, 2026
  *  version Aug. 5, 2026
- * @version Oct. 16, 2026
+ *  version Aug. 28, 2026
+ * @version Oct. 17, 2026
  * @author  ASAMI, Tomoharu
  */
 final case class TextusControlCenterRegistrationConfig(
@@ -145,6 +146,8 @@ private final class SystemTextusControlCenterRegistrationReporter extends Textus
               _request_best_effort(config, report, token, value, "heartbeat-subsystem", "running")
             } else if (_request_best_effort(config, report, token, value, "register-subsystem", "starting")) {
               acknowledged.set(true)
+              if (!closed.get)
+                _request_best_effort(config, report, token, value, "heartbeat-subsystem", "running")
             }
           }
         }

@@ -24,7 +24,7 @@ import scala.util.control.NonFatal
 
 /*
  * @since   Oct. 16, 2026
- * @version Oct. 16, 2026
+ * @version Oct. 17, 2026
  */
 final class CanonicalServerNotificationSpec extends AnyWordSpec with Matchers with GivenWhenThen {
   "canonical server notification" should {
@@ -70,13 +70,13 @@ final class CanonicalServerNotificationSpec extends AnyWordSpec with Matchers wi
             val expectedbase = if (publicbase.isEmpty) "http://127.0.0.1:38010" else publicbase.stripSuffix("/")
             When("the ready session registers and later readiness changes before close")
             _with_session(_config(endpoint, publicbase), report) { session =>
-              _await(endpoint.forInstance(report.instanceId).nonEmpty)
+              _await(endpoint.forInstance(report.instanceId).exists(_.operation == "heartbeat-subsystem"))
               _ready("http://127.0.0.1:39001", "/web/changed")
               session.close()
               _await(endpoint.forInstance(report.instanceId).exists(_.operation == "deregister-subsystem"))
               Then("register and terminal notification use the same captured origin and selected application path")
               val requests = endpoint.forInstance(report.instanceId)
-              requests.map(_.operation) shouldBe Vector("register-subsystem", "deregister-subsystem")
+              requests.map(_.operation) shouldBe Vector("register-subsystem", "heartbeat-subsystem", "deregister-subsystem")
               requests.foreach { request =>
                 request.parameters("baseUrl") shouldBe expectedbase
                 request.parameters.get("applicationUrl") shouldBe Option.when(path.nonEmpty)(expectedbase + path)
@@ -290,16 +290,16 @@ final class CanonicalServerNotificationSpec extends AnyWordSpec with Matchers wi
                 warning should not include "instanceId"
                 warning should not include endpoint.endpoint
                 When("the same session reaches its later retry interval with the original trust task still held")
-                _await(endpoint.forInstance(report.instanceId).exists(_.operation == "register-subsystem"))
+                _await(endpoint.forInstance(report.instanceId).exists(_.operation == "heartbeat-subsystem"))
                 session.close()
                 _await(endpoint.forInstance(report.instanceId).exists(_.operation == "deregister-subsystem"))
                 session.close()
                 Then("normal subsequent trust checks permit one accepted registration and its sole terminal notification before the first task is released")
                 completed.getCount shouldBe 1L
                 release.getCount shouldBe 1L
-                endpoint.connectionCount shouldBe 3
+                endpoint.connectionCount shouldBe 4
                 val requests = endpoint.forInstance(report.instanceId)
-                requests.map(_.operation) shouldBe Vector("register-subsystem", "deregister-subsystem")
+                requests.map(_.operation) shouldBe Vector("register-subsystem", "heartbeat-subsystem", "deregister-subsystem")
                 requests.foreach { request =>
                   request.method shouldBe "GET"
                   request.authorization shouldBe "Bearer wire-token"
@@ -310,7 +310,7 @@ final class CanonicalServerNotificationSpec extends AnyWordSpec with Matchers wi
                     "baseUrl" -> "http://127.0.0.1:38000", "applicationUrl" -> "http://127.0.0.1:38000/web",
                     "hostLabel" -> "spec-host", "startedAt" -> report.startedAt.toString,
                     "subsystemName" -> report.subsystemName.get, "subsystemVersion" -> report.subsystemVersion.get,
-                    "launcherState" -> (if (request.operation == "register-subsystem") "starting" else "stopped")
+                    "launcherState" -> (if (request.operation == "register-subsystem") "starting" else if (request.operation == "heartbeat-subsystem") "running" else "stopped")
                   )
                 }
               }
@@ -332,12 +332,12 @@ final class CanonicalServerNotificationSpec extends AnyWordSpec with Matchers wi
           val config = TextusControlCenterRegistrationConfig(endpoint.endpoint, "WIRE_TOKEN", Duration.ofSeconds(2), Duration.ofSeconds(30), "spec-host", "")
           When("the daemon notifies the matching trusted HTTPS hostname and closes its session")
           _with_session(config, report) { session =>
-            _await(endpoint.forInstance(report.instanceId).exists(_.operation == "register-subsystem"))
+            _await(endpoint.forInstance(report.instanceId).exists(_.operation == "heartbeat-subsystem"))
             session.close()
             _await(endpoint.forInstance(report.instanceId).exists(_.operation == "deregister-subsystem"))
             Then("the encrypted GET, bearer credential, exact query fields, and sole terminal attempt retain their existing contract")
             val requests = endpoint.forInstance(report.instanceId)
-            requests.map(_.operation) shouldBe Vector("register-subsystem", "deregister-subsystem")
+            requests.map(_.operation) shouldBe Vector("register-subsystem", "heartbeat-subsystem", "deregister-subsystem")
             requests.foreach { request =>
               request.method shouldBe "GET"
               request.authorization shouldBe "Bearer wire-token"
@@ -348,10 +348,10 @@ final class CanonicalServerNotificationSpec extends AnyWordSpec with Matchers wi
                 "baseUrl" -> "http://127.0.0.1:38000", "applicationUrl" -> "http://127.0.0.1:38000/web",
                 "hostLabel" -> "spec-host", "startedAt" -> report.startedAt.toString,
                 "subsystemName" -> report.subsystemName.get, "subsystemVersion" -> report.subsystemVersion.get,
-                "launcherState" -> (if (request.operation == "register-subsystem") "starting" else "stopped")
+                "launcherState" -> (if (request.operation == "register-subsystem") "starting" else if (request.operation == "heartbeat-subsystem") "running" else "stopped")
               )
             }
-            endpoint.hosts shouldBe Vector.fill(2)(s"localhost:${endpoint.port}")
+            endpoint.hosts shouldBe Vector.fill(3)(s"localhost:${endpoint.port}")
           }
           _with_warning_output { warnings =>
             When("the same trusted certificate is reached through its nonmatching IP hostname")
@@ -359,8 +359,8 @@ final class CanonicalServerNotificationSpec extends AnyWordSpec with Matchers wi
               Then("HTTPS identification fails before any credential-bearing GET reaches the endpoint")
               endpoint.rejected.await(3L, TimeUnit.SECONDS) shouldBe true
               _await(warnings.toString(StandardCharsets.UTF_8).contains("register-subsystem request failed"))
-              endpoint.requests.map(_.operation) shouldBe Vector("register-subsystem", "deregister-subsystem")
-              endpoint.connectionCount shouldBe 3
+              endpoint.requests.map(_.operation) shouldBe Vector("register-subsystem", "heartbeat-subsystem", "deregister-subsystem")
+              endpoint.connectionCount shouldBe 4
               val warning = warnings.toString(StandardCharsets.UTF_8)
               warning should not include "wire-token"
               warning should not include endpoint.mismatchedEndpoint

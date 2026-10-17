@@ -120,3 +120,13 @@ specifies at least 50 successful generated actual-store cases with zero
 discards (EP1), legacy wire and positional-source compatibility (EP2), and
 preservation of other-kind native tuples (EP3). Declared wire inputs do not
 prove a second writer process, canonical child, or lifecycle ownership.
+
+## Integrated running notification
+
+After readiness yields one coherent registration snapshot, a successful initial
+registration or scheduled registration retry immediately attempts one
+`heartbeat-subsystem` with `launcherState=running`, using the same captured
+origin, application URL and invocation identity. Later heartbeat intervals
+retain that snapshot and acknowledgment. Closing during an in-flight initial
+registration suppresses the new heartbeat and retains the sole terminal
+notification after acknowledgment. Control Center does not register itself.
